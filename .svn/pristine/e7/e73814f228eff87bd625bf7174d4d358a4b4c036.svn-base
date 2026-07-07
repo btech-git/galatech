@@ -1,0 +1,261 @@
+<?php
+
+class IndentController extends SelectionController {
+
+    public function filters() {
+        return array(
+            'access',
+        );
+    }
+
+    public function filterAccess($filterChain) {
+        $taxCreateValid = Yii::app()->user->checkAccess('tDeliveryCreate') || Yii::app()->user->checkAccess('tsDeliveryCreate');
+        $nonTaxCreateValid = Yii::app()->user->checkAccess('ntDeliveryCreate');
+        $taxEditValid = Yii::app()->user->checkAccess('tDeliveryEdit') || Yii::app()->user->checkAccess('tsDeliveryEdit');
+        $nonTaxEditValid = Yii::app()->user->checkAccess('ntDeliveryEdit');
+
+        if ($filterChain->action->id === 'create') {
+            $params = $filterChain->controller->actionParams;
+
+            if (isset($params['id'])) {
+                if (!($taxEditValid || $nonTaxEditValid))
+                    $this->redirect(array('/site/login'));
+            } else {
+                if (isset($params['nt'])) {
+                    if (!$nonTaxCreateValid)
+                        $this->redirect(array('/site/login'));
+                } else {
+                    if (!$taxCreateValid)
+                        $this->redirect(array('/site/login'));
+                }
+            }
+        }
+        if ($filterChain->action->id === 'customerCompletion' || $filterChain->action->id === 'addProductAjax' || $filterChain->action->id === 'discountTaxTotalAjaxData' || $filterChain->action->id === 'downpaymentTaxTotalAjaxData' || $filterChain->action->id === 'grandTotalAjaxData' || $filterChain->action->id === 'removeProductAjax' || $filterChain->action->id === 'taxTotalAjaxData' || $filterChain->action->id === 'totalAjaxData' || $filterChain->action->id === 'updateAllProductAjax' || $filterChain->action->id === 'memo' || $filterChain->action->id === 'view') {
+            if (!($taxCreateValid || $nonTaxCreateValid || $taxEditValid || $nonTaxEditValid))
+                $this->redirect(array('/site/login'));
+        }
+        if ($filterChain->action->id === 'delete' || $filterChain->action->id === 'admin') {
+            if (!($taxEditValid || $nonTaxEditValid))
+                $this->redirect(array('/site/login'));
+        }
+        if ($filterChain->action->id === 'report') {
+            if (!(Yii::app()->user->checkAccess('ntDeliveryReport') || Yii::app()->user->checkAccess('tDeliveryReport') || Yii::app()->user->checkAccess('tsDeliveryReport')))
+                $this->redirect(array('/site/login'));
+        }
+
+        $filterChain->run();
+    }
+
+    public function actionCreate() {
+        $indent = new Indent();
+
+        if (isset($_GET['id']))
+            $indent->copyFromDb($_GET['id']);
+
+        $product = new Product('search');
+        $product->unsetAttributes();
+        if (isset($_GET['Product']))
+            $product->attributes = $_GET['Product'];
+
+        if ($indent->header->isNewRecord) {
+            $indent->header->is_non_tax = intval(isset($_GET['nt']));
+            $indent->header->number = CodeNumber::make($indent->header, 'number', ($indent->header->is_non_tax) ? 'NIND' : 'IND', ($indent->header->is_non_tax) ? true : false);
+        }
+
+        $indent->header->admin_id = Yii::app()->user->id;
+        $this->loadState($indent);
+
+        $error = false;
+
+        if (isset($_POST['Submit']) && IdempotentManager::check()) {
+            if ($indent->header->isNewRecord) {
+                $indent->header->is_non_tax = intval(isset($_GET['nt']));
+                $indent->header->number = CodeNumber::make($indent->header, 'number', ($indent->header->is_non_tax) ? 'NIND' : 'IND', ($indent->header->is_non_tax) ? true : false);
+            }
+
+            $dbTransaction = CActiveRecord::$db->beginTransaction();
+            try {
+                if ($indent->validate() && IdempotentManager::build()->save() && $indent->save(false)) {
+                    $dbTransaction->commit();
+                    $this->redirect(array('view', 'id' => $indent->header->id));
+                } else {
+                    $dbTransaction->rollback();
+                    $error = true;
+                }
+            } catch (Exception $e) {
+                $dbTransaction->rollback();
+                throw new CHttpException($e->getCode(), $e->getMessage());
+            }
+        }
+
+        $this->render('create', array(
+            'indent' => $indent,
+            'product' => $product,
+            'error' => $error,
+        ));
+    }
+
+    public function actionView($id) {
+        $indent = IndentHeader::model()->findByPk($id);
+
+        $this->render('view', array(
+            'indent' => $indent,
+        ));
+    }
+
+    public function actionReport() {
+        $indentHeader = new IndentHeader('search');
+        $indentHeader->unsetAttributes();
+        if (isset($_GET['IndentHeader']))
+            $indentHeader->attributes = $_GET['IndentHeader'];
+
+        $startDate = (isset($_GET['StartDate'])) ? $_GET['StartDate'] : '';
+        $endDate = (isset($_GET['EndDate'])) ? $_GET['EndDate'] : '';
+        $pageSize = (isset($_GET['PageSize'])) ? $_GET['PageSize'] : '';
+        $currentPage = (isset($_GET['page'])) ? $_GET['page'] : '';
+        $currentSort = (isset($_GET['sort'])) ? $_GET['sort'] : '';
+
+        $dataProvider = $indentHeader->search();
+        $dataProvider->criteria->with = array('customer');
+
+        $page = array('size' => $pageSize, 'current' => $currentPage);
+        $date = array('attribute' => 'date', 'start' => $startDate, 'end' => $endDate);
+
+        $sort = new CSort(get_class($indentHeader));
+        $sort->attributes = array('date', 'customer.name');
+
+        $dataProvider = ReportHelper::finalizeDataProvider($dataProvider, $page, $sort, $date);
+
+        $this->render('report', array(
+            'indentHeader' => $indentHeader,
+            'dataProvider' => $dataProvider,
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'sort' => $sort,
+            'currentSort' => $currentSort,
+        ));
+    }
+
+    public function actionAdmin() {
+        $model = new IndentHeader('search');
+        $model->unsetAttributes();  // clear any default values
+        if (isset($_GET['IndentHeader']))
+            $model->attributes = $_GET['IndentHeader'];
+
+        $this->render('admin', array(
+            'model' => $model,
+        ));
+    }
+
+    public function actionDelete($id) {
+        if (Yii::app()->request->isPostRequest) {
+            $indentHeader = IndentHeader::model()->resetScope()->findByPk($id);
+            if ($indentHeader !== null) {
+                $indentHeader->is_inactive = !$indentHeader->is_inactive;
+                $indentHeader->update(array('is_inactive'));
+            }
+
+            if (!isset($_GET['ajax']))
+                $this->redirect(isset($_POST['returnUrl']) ? $_POST['returnUrl'] : array('admin'));
+        } else
+            throw new CHttpException(400, 'Invalid request. Please do not repeat this request again.');
+    }
+
+    public function actionAddProductAjax($id, $nt) {
+        if (Yii::app()->request->isAjaxRequest) {
+            $indent = new Indent();
+
+            if (!empty($id))
+                $indent->copyFromDb($id);
+
+            if ($indent->header->isNewRecord)
+                $indent->header->is_non_tax = intval($nt);
+
+            $this->loadState($indent);
+
+            if (isset($_POST['ProductId']))
+                $indent->addProduct($_POST['ProductId']);
+
+            $this->renderPartial('_detail', array(
+                'indent' => $indent,
+                'error' => false,
+            ));
+        }
+    }
+
+    public function actionRemoveProductAjax($id, $index) {
+        if (Yii::app()->request->isAjaxRequest) {
+            $indent = new Indent();
+
+            if (!empty($id))
+                $indent->copyFromDb($id);
+
+            $this->loadState($indent);
+
+            $indent->removeProductAt($index);
+
+            $this->renderPartial('_detail', array(
+                'indent' => $indent,
+                'error' => false,
+            ));
+        }
+    }
+
+    public function actionTotalAjaxData($id, $index) {
+        if (Yii::app()->request->isAjaxRequest) {
+            $indent = new Indent();
+
+            if (!empty($id))
+                $indent->copyFromDb($id);
+
+            if (!isset($_POST['IndentDetail']))
+                $indent->details = array();
+
+            $this->loadState($indent);
+
+            $unitPrice = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', CHtml::value($indent->details[$index], 'unit_price')));
+            $total = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', CHtml::value($indent->details[$index], 'total')));
+            $grandTotal = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $indent->grandTotal));
+            $subTotalQuantity = CHtml::encode(Yii::app()->numberFormatter->format('#,##0', $indent->subTotalQuantity));
+
+            echo CJSON::encode(array(
+                'unitPrice' => $unitPrice,
+                'total' => $total,
+                'grandTotal' => $grandTotal,
+                'subTotalQuantity' => $subTotalQuantity
+            ));
+        }
+    }
+
+    public function actionCustomerCompletion() {
+        echo CJSON::encode(Completion::customer($_GET['term']));
+    }
+
+    protected function reportGrandTotal($dataProvider) {
+        $grandTotal = 0.00;
+
+        foreach ($dataProvider->data as $data)
+            $grandTotal += $data->grandTotal;
+
+        return $grandTotal;
+    }
+
+    protected function loadState(&$indent) {
+        if (isset($_POST['IndentHeader'])) {
+            $indent->header->attributes = $_POST['IndentHeader'];
+        }
+        if (isset($_POST['IndentDetail'])) {
+            foreach ($_POST['IndentDetail'] as $i => $item) {
+                if (isset($indent->details[$i]))
+                    $indent->details[$i]->attributes = $item;
+                else {
+                    $detail = new IndentDetail();
+                    $detail->attributes = $item;
+                    $indent->details[] = $detail;
+                }
+            }
+            if (count($_POST['IndentDetail']) < count($indent->details))
+                array_splice($indent->details, $i + 1);
+        }
+    }
+}

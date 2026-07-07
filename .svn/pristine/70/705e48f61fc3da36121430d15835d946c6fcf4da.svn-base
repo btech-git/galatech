@@ -1,0 +1,219 @@
+<?php
+
+/**
+ * This is the model class for table "tblgt_admin".
+ *
+ * The followings are the available columns in table 'tblgt_admin':
+ * @property integer $id
+ * @property string $username
+ * @property string $password
+ * @property string $name
+ * @property string $address
+ * @property string $phone
+ * @property string $email
+ * @property string $note
+ * @property integer $is_inactive
+ *
+ * The followings are the available model relations:
+ * @property AccountingJournal[] $accountingJournals
+ * @property AdjustmentHeader[] $adjustmentHeaders
+ * @property Cheque[] $cheques
+ * @property DeliveryHeader[] $deliveryHeaders
+ * @property DepositHeader[] $depositHeaders
+ * @property ExpenseHeader[] $expenseHeaders
+ * @property IndentHeader[] $indentHeaders
+ * @property Inventory[] $inventories
+ * @property InvoiceHeader[] $invoiceHeaders
+ * @property JournalVoucherHeader[] $journalVoucherHeaders
+ * @property PurchaseAssetHeader[] $purchaseAssetHeaders
+ * @property PurchaseHeader[] $purchaseHeaders
+ * @property PurchasePaymentHeader[] $purchasePaymentHeaders
+ * @property PurchaseReturnHeader[] $purchaseReturnHeaders
+ * @property Receipt[] $receipts
+ * @property ReceiveHeader[] $receiveHeaders
+ * @property SalesAssetHeader[] $salesAssetHeaders
+ * @property SalesDownpayment[] $salesDownpayments
+ * @property SalesPaymentHeader[] $salesPaymentHeaders
+ * @property SalesReturnHeader[] $salesReturnHeaders
+ * @property TaxForm[] $taxForms
+ * @property TaxFormRevisedHeader[] $taxFormRevisedHeaders
+ * @property TransferHeader[] $transferHeaders
+ */
+class Admin extends ActiveRecord {
+
+    public $current_password = '';
+    public $new_password = '';
+    public $confirm_password = '';
+    public $roles = array();
+
+    /**
+     * Returns the static model of the specified AR class.
+     * @return Admin the static model class
+     */
+    public static function model($className = __CLASS__) {
+        return parent::model($className);
+    }
+
+    /**
+     * @return string the associated database table name
+     */
+    public function tableName() {
+        return 'tblgt_admin';
+    }
+
+    /**
+     * @return array validation rules for model attributes.
+     */
+    public function rules() {
+        // NOTE: you should only define rules for those attributes that
+        // will receive user inputs.
+        return array(
+            array('username, name', 'required'),
+            array('is_inactive', 'numerical', 'integerOnly' => true),
+            array('username, name, phone, email', 'length', 'max' => 60),
+            array('email', 'email'),
+            array('password', 'length', 'max' => 32),
+            array('current_password, new_password, confirm_password', 'length', 'max' => 32),
+            array('new_password, confirm_password', 'required', 'on' => 'insert'),
+            array('confirm_password', 'compare', 'compareAttribute' => 'new_password'),
+//            array('current_password', 'authenticate', 'on' => 'update'),
+            array('address, roles, note', 'safe'),
+            // The following rule is used by search().
+            // Please remove those attributes that should not be searched.
+            array('id, username, password, name, address, phone, email, note, is_inactive', 'safe', 'on' => 'search'),
+        );
+    }
+
+    /**
+     * @return array relational rules.
+     */
+    public function relations() {
+        // NOTE: you may need to adjust the relation name and the related
+        // class name for the relations automatically generated below.
+        return array(
+            'accountingJournals' => array(self::HAS_MANY, 'AccountingJournal', 'admin_id'),
+            'adjustmentHeaders' => array(self::HAS_MANY, 'AdjustmentHeader', 'admin_id'),
+            'cheques' => array(self::HAS_MANY, 'Cheque', 'admin_id'),
+            'deliveryHeaders' => array(self::HAS_MANY, 'DeliveryHeader', 'admin_id'),
+            'depositHeaders' => array(self::HAS_MANY, 'DepositHeader', 'admin_id'),
+            'expenseHeaders' => array(self::HAS_MANY, 'ExpenseHeader', 'admin_id'),
+            'indentHeaders' => array(self::HAS_MANY, 'IndentHeader', 'admin_id'),
+            'inventories' => array(self::HAS_MANY, 'Inventory', 'admin_id'),
+            'invoiceHeaders' => array(self::HAS_MANY, 'InvoiceHeader', 'admin_id'),
+            'journalVoucherHeaders' => array(self::HAS_MANY, 'JournalVoucherHeader', 'admin_id'),
+            'purchaseAssetHeaders' => array(self::HAS_MANY, 'PurchaseAssetHeader', 'admin_id'),
+            'purchaseHeaders' => array(self::HAS_MANY, 'PurchaseHeader', 'admin_id'),
+            'purchasePaymentHeaders' => array(self::HAS_MANY, 'PurchasePaymentHeader', 'admin_id'),
+            'purchaseReturnHeaders' => array(self::HAS_MANY, 'PurchaseReturnHeader', 'admin_id'),
+            'receipts' => array(self::HAS_MANY, 'Receipt', 'admin_id'),
+            'receiveHeaders' => array(self::HAS_MANY, 'ReceiveHeader', 'admin_id'),
+            'salesAssetHeaders' => array(self::HAS_MANY, 'SalesAssetHeader', 'admin_id'),
+            'salesDownpayments' => array(self::HAS_MANY, 'SalesDownpayment', 'admin_id'),
+            'salesPaymentHeaders' => array(self::HAS_MANY, 'SalesPaymentHeader', 'admin_id'),
+            'salesReturnHeaders' => array(self::HAS_MANY, 'SalesReturnHeader', 'admin_id'),
+            'taxForms' => array(self::HAS_MANY, 'TaxForm', 'admin_id'),
+            'taxFormRevisedHeaders' => array(self::HAS_MANY, 'TaxFormRevisedHeader', 'admin_id'),
+            'transferHeaders' => array(self::HAS_MANY, 'TransferHeader', 'admin_id'),
+        );
+    }
+
+    /**
+     * @return array customized attribute labels (name=>label)
+     */
+    public function attributeLabels() {
+        return array(
+            'id' => 'ID',
+            'username' => 'Username',
+            'password' => 'Password',
+            'name' => 'Name',
+            'address' => 'Address',
+            'phone' => 'Phone',
+            'email' => 'Email',
+            'note' => 'Note',
+            'is_inactive' => 'Status',
+        );
+    }
+
+    /**
+     * Retrieves a list of models based on the current search/filter conditions.
+     * @return CActiveDataProvider the data provider that can return the models based on the search/filter conditions.
+     */
+    public function search() {
+        // Warning: Please modify the following code to remove attributes that
+        // should not be searched.
+
+        $criteria = new CDbCriteria;
+
+        $criteria->compare('id', $this->id);
+        $criteria->compare('username', $this->username, true);
+        $criteria->compare('password', $this->password, true);
+        $criteria->compare('name', $this->name, true);
+        $criteria->compare('address', $this->address, true);
+        $criteria->compare('phone', $this->phone, true);
+        $criteria->compare('email', $this->email, true);
+        $criteria->compare('note', $this->note, true);
+        $criteria->compare('is_inactive', $this->is_inactive);
+
+        return new CActiveDataProvider($this, array(
+            'criteria' => $criteria,
+        ));
+    }
+
+    public function beforeSave() {
+        if (!empty($this->new_password) && !empty($this->confirm_password))
+            $this->password = md5($this->new_password);
+
+        return true;
+    }
+
+    /**
+     * Authenticates the 'current_password'.
+     * This is the 'authenticate' validator as declared in rules().
+     */
+    public function authenticate($attribute, $params) {
+        if (!$this->hasErrors()) {
+            if (!empty($this->new_password) && !empty($this->confirm_password)) {
+                if (empty($this->current_password))
+                    $this->addError('current_password', 'Current Password cannot be blank.');
+                else if (md5($this->current_password) !== $this->password)
+                    $this->addError('current_password', 'Password is incorrect');
+            }
+        }
+    }
+
+    public function afterFind() {
+        parent::afterFind();
+
+        $auth = Yii::app()->authManager;
+
+        $authItems = array_keys($auth->getAuthItems(null, $this->id));
+        $this->roles = empty($authItems) ? array() : array_combine($authItems, $authItems);
+    }
+
+    public function afterSave() {
+        parent::afterSave();
+
+        $auth = Yii::app()->authManager;
+
+        if ($this->scenario === 'insert') {
+            foreach ($this->roles as $role) {
+                $auth->assign($role, $this->id);
+            }
+        } else {
+            $authItems = array_keys($auth->getAuthItems(null, $this->id));
+            $assignedRoles = empty($authItems) ? array() : array_combine($authItems, $authItems);
+
+            foreach ($this->roles as $role) {
+                if (!$auth->isAssigned($role, $this->id))
+                    $auth->assign($role, $this->id);
+
+                unset($assignedRoles[$role]);
+            }
+
+            foreach ($assignedRoles as $role) {
+                $auth->revoke($role, $this->id);
+            }
+        }
+    }
+
+}

@@ -1,0 +1,411 @@
+<?php
+
+class ReceiveController extends Controller {
+
+    public function filters() {
+        return array(
+            'access',
+        );
+    }
+
+    public function filterAccess($filterChain) {
+        $taxCreateValid = Yii::app()->user->checkAccess('tReceiveCreate') || Yii::app()->user->checkAccess('tsReceiveCreate');
+        $nonTaxCreateValid = Yii::app()->user->checkAccess('ntReceiveCreate');
+        $taxEditValid = Yii::app()->user->checkAccess('tReceiveEdit') || Yii::app()->user->checkAccess('tsReceiveEdit');
+        $nonTaxEditValid = Yii::app()->user->checkAccess('ntReceiveEdit');
+
+        if ($filterChain->action->id === 'create') {
+            $params = $filterChain->controller->actionParams;
+
+            if (isset($params['id'])) {
+                if (!($taxEditValid || $nonTaxEditValid))
+                    $this->redirect(array('/site/login'));
+            } else {
+                if (isset($params['nt'])) {
+                    if (!$nonTaxCreateValid)
+                        $this->redirect(array('/site/login'));
+                } else {
+                    if (!$taxCreateValid)
+                        $this->redirect(array('/site/login'));
+                }
+            }
+        }
+        if ($filterChain->action->id === 'addProductAjax' || $filterChain->action->id === 'purchaseAjaxData' || $filterChain->action->id === 'removeProductAjax' || $filterChain->action->id === 'memo' || $filterChain->action->id === 'view') {
+            if (!($taxCreateValid || $nonTaxCreateValid || $taxEditValid || $nonTaxEditValid))
+                $this->redirect(array('/site/login'));
+        }
+        if ($filterChain->action->id === 'delete' || $filterChain->action->id === 'admin') {
+            if (!($taxEditValid || $nonTaxEditValid))
+                $this->redirect(array('/site/login'));
+        }
+        if ($filterChain->action->id === 'report') {
+            if (!(Yii::app()->user->checkAccess('ntReceiveReport') || Yii::app()->user->checkAccess('tReceiveReport') || Yii::app()->user->checkAccess('tsReceiveReport')))
+                $this->redirect(array('/site/login'));
+        }
+
+        $filterChain->run();
+    }
+
+    public function actionCreate() {
+        $receive = new Receive();
+
+        if (isset($_GET['id'])) {
+            $receive->copyFromDb($_GET['id']);
+        }
+
+        if (empty($receive->header->id)) {
+            $receive->header->is_non_tax = intval(isset($_GET['nt']));
+//            $receive->header->number = CodeNumber::make($receive->header, 'number', ($receive->header->is_non_tax) ? 'NRCV' : 'RCV', ($receive->header->is_non_tax) ? true : false);
+        }
+
+        $receive->header->admin_id = Yii::app()->user->id;
+        $this->loadState($receive);
+
+        $purchaseHeader = new PurchaseHeader('search');
+        $purchaseHeader->unsetAttributes();  // clear any default values
+        if (isset($_GET['PurchaseHeader'])) {
+            $purchaseHeader->attributes = $_GET['PurchaseHeader'];
+        }
+
+        $error = false;
+
+        if (isset($_POST['Submit']) && IdempotentManager::check()) {
+            if (empty($receive->header->id)) {
+                $receive->header->number = CodeNumber::make($receive->header, 'number', ($receive->header->is_non_tax) ? 'NRCV' : 'RCV', ($receive->header->is_non_tax) ? true : false);
+            }
+
+            $dbTransaction = CActiveRecord::$db->beginTransaction();
+            try {
+                if ($receive->validate() && IdempotentManager::build()->save() && $receive->save(false)) {
+                    $dbTransaction->commit();
+                    Yii::app()->session['ReceiveMemoAllowed'] = true;
+                    $this->redirect(array('view', 'id' => $receive->header->id));
+                } else {
+                    $dbTransaction->rollback();
+                    $error = true;
+                }
+            } catch (Exception $e) {
+                $dbTransaction->rollback();
+                throw new CHttpException($e->getCode(), $e->getMessage());
+            }
+        }
+
+        $isNonTax = (isset($_GET['id'])) ? null : $receive->header->is_non_tax;
+
+        $this->render('create', array(
+            'receive' => $receive,
+            'purchaseHeader' => $purchaseHeader,
+            'error' => $error,
+            'isNonTax' => $isNonTax,
+        ));
+    }
+
+    public function actionDelete($id) {
+        if (Yii::app()->request->isPostRequest) {
+            $receive = ReceiveHeader::model()->resetScope()->findByPk($id);
+            if ($receive !== null) {
+                $receive->is_inactive = !$receive->is_inactive;
+                $receive->update(array('is_inactive'));
+
+                foreach ($receive->receiveDetails as $detail) {
+                    $detail->is_inactive = !$detail->is_inactive;
+                    $detail->update(array('is_inactive'));
+                }
+            }
+
+            Inventory::model()->DeleteAllByAttributes(array(
+                'transaction_number' => $receive->number
+            ));
+
+            if (!isset($_GET['ajax']))
+                $this->redirect(isset($_POST['returnUrl']) ? $_POST['returnUrl'] : array('admin'));
+        } else
+            throw new CHttpException(400, 'Invalid request. Please do not repeat this request again.');
+    }
+
+    public function actionView($id) {
+        $receive = ReceiveHeader::model()->findByPk($id);
+
+        $this->render('view', array(
+            'receive' => $receive,
+        ));
+    }
+
+    public function actionMemo($id) {
+        if (!(Yii::app()->user->checkAccess('administrator'))) {
+            if (!(isset(Yii::app()->session['ReceiveMemoAllowed']) && Yii::app()->session['ReceiveMemoAllowed'] === true))
+                $this->redirect(array('admin'));
+        }
+
+        Yii::app()->session->remove('ReceiveMemoAllowed');
+
+        $receive = ReceiveHeader::model()->findByPk($id);
+
+        $receiveSupplier = ($receive->is_non_tax) ? $receive->purchaseHeader->supplier->name : $receive->purchaseHeader->supplier->company;
+        $receiveHeaderText = ($receive->is_non_tax) ? '' : 'PT. Galatech';
+
+        $this->render('memo', array(
+            'receive' => $receive,
+            'receiveSupplier' => $receiveSupplier,
+            'receiveHeaderText' => $receiveHeaderText,
+        ));
+    }
+
+    public function actionAdmin() {
+        $receive = new ReceiveHeader('search');
+        $receive->unsetAttributes();
+
+        if (isset($_GET['ReceiveHeader'])) {
+            $receive->attributes = $_GET['ReceiveHeader'];
+        }
+
+        $supplierId = (isset($_GET['SupplierId'])) ? $_GET['SupplierId'] : '';
+        $purchaseNumber = (isset($_GET['PurchaseNumber'])) ? $_GET['PurchaseNumber'] : '';
+
+        $dataProvider = $receive->search();
+        $dataProvider->criteria->join = "INNER JOIN tblgt_purchase_header purchaseHeader ON (t.purchase_header_id = purchaseHeader.id) AND (purchaseHeader.is_inactive = 0)";
+//                $dataProvider->criteria->with = array('purchaseHeader');
+        $dataProvider->criteria->compare('purchaseHeader.supplier_id', $supplierId);
+        $dataProvider->criteria->compare('purchaseHeader.number', $purchaseNumber, true);
+
+        $this->render('admin', array(
+            'receive' => $receive,
+            'purchaseNumber' => $purchaseNumber,
+            'dataProvider' => $dataProvider,
+            'supplierId' => $supplierId,
+        ));
+    }
+
+    public function actionReport() {
+        $receiveHeader = new ReceiveHeader('search');
+        $receiveHeader->unsetAttributes();
+        if (isset($_GET['ReceiveHeader']))
+            $receiveHeader->attributes = $_GET['ReceiveHeader'];
+
+        $startDate = (isset($_GET['StartDate'])) ? $_GET['StartDate'] : '';
+        $endDate = (isset($_GET['EndDate'])) ? $_GET['EndDate'] : '';
+        $pageSize = (isset($_GET['PageSize'])) ? $_GET['PageSize'] : '';
+        $currentPage = (isset($_GET['page'])) ? $_GET['page'] : '';
+        $currentSort = (isset($_GET['sort'])) ? $_GET['sort'] : '';
+
+        $supplierId = (isset($_GET['SupplierId'])) ? $_GET['SupplierId'] : '';
+
+        $dataProvider = $receiveHeader->search();
+        $dataProvider->criteria->compare('purchaseHeader.supplier_id', $supplierId);
+        $dataProvider->criteria->join = "INNER JOIN " . PurchaseHeader::model()->tableName() . " purchaseHeader ON purchaseHeader.id = t.purchase_header_id INNER JOIN " . Supplier::model()->tableName() . " supplier ON purchaseHeader.supplier_id = supplier.id";
+
+        $page = array('size' => $pageSize, 'current' => $currentPage);
+        $date = array('attribute' => 't.date', 'start' => $startDate, 'end' => $endDate);
+
+        $sort = new CSort(get_class($receiveHeader));
+        $sort->attributes = array('t.date', 'supplier.name');
+
+        $dataProvider = ReportHelper::finalizeDataProvider($dataProvider, $page, $sort, $date);
+
+        if (isset($_GET['SaveExcel']))
+            $this->saveToExcel($dataProvider, array('startDate' => $startDate, 'endDate' => $endDate));
+
+        $this->render('report', array(
+            'receiveHeader' => $receiveHeader,
+            'dataProvider' => $dataProvider,
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'sort' => $sort,
+            'currentSort' => $currentSort,
+            'supplierId' => $supplierId,
+        ));
+    }
+
+    protected function saveToExcel($dataProvider, array $options = array()) {
+        spl_autoload_unregister(array('YiiBase', 'autoload'));
+        include_once Yii::getPathOfAlias('ext.phpexcel.Classes') . DIRECTORY_SEPARATOR . 'PHPExcel.php';
+        spl_autoload_register(array('YiiBase', 'autoload'));
+
+        $objPHPExcel = new PHPExcel();
+
+        $documentProperties = $objPHPExcel->getProperties();
+        $documentProperties->setCreator('Galatech');
+        $documentProperties->setTitle('Laporan Penerimaan Barang');
+
+        $worksheet = $objPHPExcel->setActiveSheetIndex(0);
+        $worksheet->setTitle('Penerimaan');
+
+        $worksheet->getColumnDimension('A')->setAutoSize(true);
+        $worksheet->getColumnDimension('B')->setAutoSize(true);
+        $worksheet->getColumnDimension('C')->setAutoSize(true);
+        $worksheet->getColumnDimension('D')->setAutoSize(true);
+        $worksheet->getColumnDimension('E')->setAutoSize(true);
+        $worksheet->getColumnDimension('F')->setAutoSize(true);
+        $worksheet->getColumnDimension('G')->setAutoSize(true);
+
+        $worksheet->mergeCells('A1:G1');
+        $worksheet->mergeCells('A2:G2');
+        $worksheet->mergeCells('A3:G3');
+
+        $worksheet->getStyle('A1:G5')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        $worksheet->getStyle('A1:G6')->getFont()->setBold(true);
+
+        $worksheet->setCellValue('A1', 'Galatech');
+        $worksheet->setCellValue('A2', 'Penerimaan Barang');
+        $worksheet->setCellValue('A3', Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($options['startDate'])) . ' - ' . Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($options['endDate'])));
+
+        $worksheet->setCellValue('A5', 'Penerimaan #');
+        $worksheet->setCellValue('B5', 'Tanggal');
+        $worksheet->setCellValue('C5', 'Pembelian #');
+        $worksheet->setCellValue('D5', 'Faktur #');
+        $worksheet->setCellValue('E5', 'Supplier');
+        $worksheet->setCellValue('F5', 'Gudang');
+        $worksheet->setCellValue('G5', 'Catatan');
+
+        $worksheet->getStyle('A6:G6')->getBorders()->getBottom()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);
+
+        $worksheet->setCellValue('B6', 'Nama Barang');
+        $worksheet->setCellValue('C6', 'Ukuran');
+        $worksheet->setCellValue('D6', 'Jumlah Pesanan');
+        $worksheet->setCellValue('E6', 'Jumlah Terima');
+        $worksheet->setCellValue('F6', 'Satuan');
+
+        $counter = 8;
+        foreach ($dataProvider->data as $header) {
+            $worksheet->getStyle("C{$counter}")->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+
+            $worksheet->getStyle("C{$counter}")->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+
+            $worksheet->setCellValue("A{$counter}", $header->number);
+            $worksheet->setCellValue("B{$counter}", Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($header->date)));
+            $worksheet->setCellValue("C{$counter}", $header->purchaseHeader->number);
+            $worksheet->setCellValue("D{$counter}", $header->reference);
+            $worksheet->setCellValue("E{$counter}", $header->purchaseHeader->supplier->company);
+            $worksheet->setCellValue("F{$counter}", $header->warehouse->name);
+            $worksheet->setCellValue("G{$counter}", $header->note);
+
+            $counter++;
+
+            foreach ($header->receiveDetails as $detail) {
+                $worksheet->setCellValue("B{$counter}", $detail->product->name);
+                $worksheet->setCellValue("C{$counter}", $detail->product->size);
+                $worksheet->setCellValue("D{$counter}", $detail->quantityOrdered);
+                $worksheet->setCellValue("E{$counter}", $detail->quantity);
+                $worksheet->setCellValue("F{$counter}", $detail->product->unit->name);
+
+                $counter++;
+            }
+
+            $worksheet->getStyle("A{$counter}:G{$counter}")->getBorders()->getTop()->setBorderStyle(PHPExcel_Style_Border::BORDER_THIN);
+        }
+
+        header('Content-Type: application/xlsx');
+        header('Content-Disposition: attachment;filename="Penerimaan.xlsx"');
+        header('Cache-Control: max-age=0');
+
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel2007');
+        $objWriter->save('php://output');
+
+        Yii::app()->end();
+    }
+
+    public function actionRemoveProductAjax($id, $index) {
+        if (Yii::app()->request->isAjaxRequest) {
+            $receive = new Receive();
+
+//            if (!empty($id))
+//                $receive->copyFromDb($id);
+
+            if (!isset($_POST['ReceiveDetail']))
+                $receive->details = array();
+
+            $this->loadState($receive);
+
+            $receive->removeProductAt($index);
+
+            $this->renderPartial('_detail', array(
+                'receive' => $receive,
+                'error' => false,
+            ));
+        }
+    }
+
+    public function actionPurchaseAjaxData($id) {
+        if (Yii::app()->request->isAjaxRequest) {
+            $receive = new Receive();
+
+//            if (!empty($id))
+//                $receive->copyFromDb($id);
+
+            if (!isset($_POST['ReceiveDetail']))
+                $receive->details = array();
+
+            $this->loadState($receive);
+
+            $object = array(
+                'purchase_header_number' => $receive->header->purchaseHeader->number,
+                'supplier_company' => $receive->header->purchaseHeader->supplier->company,
+            );
+
+            echo CJSON::encode($object);
+        }
+    }
+
+    public function actionAddProductAjax($id, $nt) {
+        if (Yii::app()->request->isAjaxRequest) {
+            $receive = new Receive();
+
+//            if (!empty($id))
+//                $receive->copyFromDb($id);
+
+            if ($receive->header->isNewRecord)
+                $receive->header->is_non_tax = intval($nt);
+
+            if (!isset($_POST['ReceiveDetail']))
+                $receive->details = array();
+
+            $this->loadState($receive);
+
+            if (isset($_POST['ReceiveHeader']['purchase_header_id']))
+                $receive->addProductByPurchase($_POST['ReceiveHeader']['purchase_header_id']);
+
+            $this->renderPartial('_detail', array(
+                'receive' => $receive,
+                'error' => false,
+            ));
+        }
+    }
+
+    public function actionTotalAjaxData($id, $index) {
+        if (Yii::app()->request->isAjaxRequest) {
+            $receive = new Receive();
+
+//            if (!empty($id))
+//                $receive->copyFromDb($id);
+
+            if (!isset($_POST['ReceiveDetail']))
+                $receive->details = array();
+
+            $this->loadState($receive);
+            $subTotalQuantity = CHtml::encode(Yii::app()->numberFormatter->format('#,##0', $purchaseReturn->subTotalQuantity));
+
+            echo CJSON::encode(array(
+                'subTotalQuantity' => $subTotalQuantity
+            ));
+        }
+    }
+
+    protected function loadState(&$receive) {
+        if (isset($_POST['ReceiveHeader'])) {
+            $receive->header->attributes = $_POST['ReceiveHeader'];
+        }
+        if (isset($_POST['ReceiveDetail'])) {
+            foreach ($_POST['ReceiveDetail'] as $i => $item) {
+                if (isset($receive->details[$i]))
+                    $receive->details[$i]->attributes = $item;
+                else {
+                    $detail = new ReceiveDetail();
+                    $detail->attributes = $item;
+                    $receive->details[] = $detail;
+                }
+            }
+            if (count($_POST['ReceiveDetail']) < count($receive->details))
+                array_splice($receive->details, $i + 1);
+        }
+    }
+}

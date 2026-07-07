@@ -1,0 +1,137 @@
+<h1>Pencatatan Barang Inden</h1>
+
+<div class="form">
+
+	<?php echo CHtml::beginForm(); ?>
+
+	<div class="container">
+		<div class="span-12">
+			<div class="row">
+				<?php echo CHtml::label('Inden #', false); ?>
+				<?php echo CHtml::encode(CHtml::value($indent->header, 'number')); ?>
+				<?php echo CHtml::error($indent->header, 'number'); ?>
+			</div>
+
+			<div class="row">
+				<?php echo CHtml::label('Tanggal', false); ?>
+				<?php
+				$this->widget('zii.widgets.jui.CJuiDatePicker', array(
+					'model' => $indent->header,
+					'attribute' => 'date',
+					// additional javascript options for the date picker plugin
+					'options' => array(
+						'dateFormat' => 'yy-mm-dd',
+					),
+					'htmlOptions' => array(
+						'readonly' => true,
+					),
+				));
+				?>
+				<?php echo CHtml::error($indent->header, 'date'); ?>
+			</div>
+			
+			<div class="row">
+				<?php echo CHtml::activeLabelEx($indent->header, 'customer_id'); ?>
+				<?php
+				$this->widget('zii.widgets.jui.CJuiAutoComplete', array(
+					'model' => $indent->header,
+					'attribute' => 'customer_id',
+					'sourceUrl' => CController::createUrl('customerCompletion'),
+					//additional javascript options for the autocomplete plugin
+					'options' => array(
+						'minLength' => '2',
+						'select' => 'js:function(event, ui) {
+							$("#customer_name").html(ui.item.id);
+						}',
+					),
+				));
+				?>
+				<?php echo CHtml::openTag('span', array('id' => 'customer_name')); ?>
+				<?php echo CHtml::encode(CHtml::value($indent->header, 'customer.company')); ?>
+				<?php echo CHtml::closeTag('span'); ?>
+				<?php echo CHtml::error($indent->header, 'customer_id'); ?>
+			</div>
+		</div>
+
+		<div class="span-12 last">
+			<div class="row">
+				<?php echo CHtml::label('Catatan', ''); ?>
+				<?php echo CHtml::activeTextArea($indent->header, 'note', array('rows'=>5, 'cols'=>30)); ?>
+				<?php echo CHtml::error($indent->header, 'note'); ?>
+			</div>
+		</div>
+	</div>
+
+	<hr />
+
+	<div class="row">
+		<?php echo CHtml::button('Cari Barang', array('name' => 'Search', 'onclick' => '$("#search-dialog").dialog("open"); return false;', 'onkeypress' => 'if (event.keyCode == 13) { $("#search-dialog").dialog("open"); return false; }')); ?>
+		<?php echo CHtml::hiddenField('ProductId'); ?>
+	</div>
+
+	<div id="detail_div">
+		<?php $this->renderPartial('_detail', array('indent' => $indent, 'error' => $error)); ?>
+	</div>
+
+	<div class="row buttons">
+<?php echo CHtml::submitButton('Submit', array('name' => 'Submit', 'confirm' => 'Are you sure you want to save?')); ?>
+	</div>
+
+	<?php echo CHtml::endForm(); ?>
+
+</div><!-- form -->
+
+<div>
+	<?php
+	$this->beginWidget('zii.widgets.jui.CJuiDialog', array(
+		'id' => 'search-dialog',
+		// additional javascript options for the dialog plugin
+		'options' => array(
+			'title' => 'Products',
+			'autoOpen' => false,
+			'width' => 'auto',
+			'modal' => true,
+		),
+	));
+	?>
+
+	<div class="search-form">
+		<div id="search_div">
+<?php
+$this->renderPartial('//site/_search', array(
+	'model' => $product,
+	'specificationList' => array(),
+	'listData' => $this->listData(),
+	'action' => CHtml::normalizeUrl(array('create')),
+));
+?>
+		</div>
+	</div>
+	<?php
+	$this->widget('zii.widgets.grid.CGridView', array(
+		'id' => 'product-grid',
+		'dataProvider' => $product->search(),
+		'selectionChanged' => 'js:function(id) {
+                        $("#ProductId").val($.fn.yiiGridView.getSelection(id));
+                        $("#search-dialog").dialog("close");
+                        $.ajax({
+                                type: "POST",
+                                url: "' . CController::createUrl('addProductAjax', array('id' => $indent->header->id, 'nt' => $indent->header->is_non_tax)) . '",
+                                data: $("form").serialize(),
+                                success: function(html) { $("#detail_div").html(html); },
+                        });
+                }',
+		'columns' => array(
+			'name',
+			array(
+				'name' => 'unit_id',
+				'filter' => CHtml::listData(Unit::model()->findAll(), 'id', 'name'),
+				'value' => 'CHtml::value($data, "unit.name")',
+			),
+			'size',
+		),
+	));
+	?>
+
+<?php $this->endWidget('zii.widgets.jui.CJuiDialog'); ?>
+</div>

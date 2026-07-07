@@ -1,0 +1,525 @@
+<?php
+
+class InvoiceController extends Controller {
+
+    public function filters() {
+        return array(
+            'access',
+        );
+    }
+
+    public function filterAccess($filterChain) {
+        $taxCreateValid = Yii::app()->user->checkAccess('tInvoiceCreate') || Yii::app()->user->checkAccess('tsInvoiceCreate');
+        $nonTaxCreateValid = Yii::app()->user->checkAccess('ntInvoiceCreate');
+        $taxEditValid = Yii::app()->user->checkAccess('tInvoiceEdit') || Yii::app()->user->checkAccess('tsInvoiceEdit');
+        $nonTaxEditValid = Yii::app()->user->checkAccess('ntInvoiceEdit');
+
+        if ($filterChain->action->id === 'create') {
+            $params = $filterChain->controller->actionParams;
+
+            if (isset($params['id'])) {
+                if (!($taxEditValid || $nonTaxEditValid))
+                    $this->redirect(array('/site/login'));
+            } else {
+                if (isset($params['nt'])) {
+                    if (!$nonTaxCreateValid)
+                        $this->redirect(array('/site/login'));
+                } else {
+                    if (!$taxCreateValid)
+                        $this->redirect(array('/site/login'));
+                }
+            }
+        }
+        if ($filterChain->action->id === 'deliveryAjaxData' || $filterChain->action->id === 'showDeliveryAjax' || $filterChain->action->id === 'memo' || $filterChain->action->id === 'view') {
+            if (!($taxCreateValid || $nonTaxCreateValid || $taxEditValid || $nonTaxEditValid))
+                $this->redirect(array('/site/login'));
+        }
+        if ($filterChain->action->id === 'delete' || $filterChain->action->id === 'admin') {
+            if (!($taxEditValid || $nonTaxEditValid))
+                $this->redirect(array('/site/login'));
+        }
+        if ($filterChain->action->id === 'report') {
+            if (!(Yii::app()->user->checkAccess('ntInvoiceReport') || Yii::app()->user->checkAccess('tInvoiceReport') || Yii::app()->user->checkAccess('tsInvoiceReport')))
+                $this->redirect(array('/site/login'));
+        }
+
+        $filterChain->run();
+    }
+
+    public function actionCreate() {
+        $invoice = new Invoice();
+
+//        if (isset($_GET['id']))
+//            $invoice->copyFromDb($_GET['id']);
+
+        $invoice->header->admin_id = Yii::app()->user->id;
+        $this->loadState($invoice);
+
+        if ($invoice->header->isNewRecord) {
+            $invoice->header->is_non_tax = intval(isset($_GET['nt']));
+            $invoice->header->number = $invoice->header->codeNumber;
+        }
+
+        $error = false;
+
+        $deliveryHeader = new DeliveryHeader('search');
+        $deliveryHeader->unsetAttributes();  // clear any default values
+        if (isset($_GET['DeliveryHeader']))
+            $deliveryHeader->attributes = $_GET['DeliveryHeader'];
+
+        if (isset($_POST['Submit']) && IdempotentManager::check()) {
+            if ($invoice->header->isNewRecord) {
+                $invoice->header->is_non_tax = intval(isset($_GET['nt']));
+                $invoice->header->number = $invoice->header->codeNumber;
+            }
+
+            $dbTransaction = CActiveRecord::$db->beginTransaction();
+            try {
+                if ($invoice->validate() && IdempotentManager::build()->save() && $invoice->save(false)) {
+                    $dbTransaction->commit();
+                    Yii::app()->session['InvoiceMemoAllowed'] = true;
+                    $this->redirect(array('view', 'id' => $invoice->header->id));
+                } else {
+                    $dbTransaction->rollback();
+                    $error = true;
+                }
+            } catch (Exception $e) {
+                $dbTransaction->rollback();
+                throw new CHttpException($e->getCode(), $e->getMessage());
+            }
+        }
+
+        $this->render('create', array(
+            'invoice' => $invoice,
+            'deliveryHeader' => $deliveryHeader,
+            'error' => $error,
+        ));
+    }
+
+    public function actionDelete($id) {
+        if (Yii::app()->request->isPostRequest) {
+            $invoice = InvoiceHeader::model()->resetScope()->findByPk($id);
+            if ($invoice !== null) {
+                $invoice->is_inactive = !$invoice->is_inactive;
+                $invoice->update(array('is_inactive'));
+            }
+
+            if (!isset($_GET['ajax']))
+                $this->redirect(isset($_POST['returnUrl']) ? $_POST['returnUrl'] : array('admin'));
+        } else
+            throw new CHttpException(400, 'Invalid request. Please do not repeat this request again.');
+    }
+
+    public function actionView($id) {
+        $invoice = InvoiceHeader::model()->findByPk($id);
+
+        $this->render('view', array(
+            'invoice' => $invoice,
+        ));
+    }
+
+    public function actionAdmin() {
+        $invoice = new InvoiceHeader('search');
+        $invoice->unsetAttributes();
+
+        if (isset($_GET['InvoiceHeader']))
+            $invoice->attributes = $_GET['InvoiceHeader'];
+
+        $customerId = (isset($_GET['CustomerId'])) ? $_GET['CustomerId'] : '';
+
+        $dataProvider = $invoice->search();
+        $dataProvider->criteria->join = "INNER JOIN tblgt_delivery_header deliveryHeader ON (t.delivery_header_id = deliveryHeader.id)";
+        $dataProvider->criteria->compare('deliveryHeader.customer_id', $customerId);
+
+        $arr = array();
+        if (isset($_GET['SaveExcel'])) {
+            if (isset($_GET['selectedIds'])) {
+                foreach ($_GET['selectedIds'] as $id) {
+                    $invoice = $this->loadModel($id);
+                    array_push($arr, $invoice->attributes);
+                }
+            }
+        }
+
+        if ($arr) {
+            if (isset($_GET['SaveExcel']))
+                $this->saveToExcelAdmin($arr);
+        }
+
+        $this->render('admin', array(
+            'invoice' => $invoice,
+            'dataProvider' => $dataProvider,
+            'customerId' => $customerId,
+        ));
+    }
+
+    public function actionMemo($id) {
+        if (!(Yii::app()->user->checkAccess('administrator'))) {
+            if (!(isset(Yii::app()->session['InvoiceMemoAllowed']) && Yii::app()->session['InvoiceMemoAllowed'] === true))
+                $this->redirect(array('admin'));
+        }
+
+        Yii::app()->session->remove('InvoiceMemoAllowed');
+
+        $invoice = InvoiceHeader::model()->findByPk($id);
+
+        $invoiceHeaderText = ($invoice->is_non_tax) ? '' : 'PT. Galatech Jaya Abadi';
+        $invoiceCustomer = ($invoice->is_non_tax) ? $invoice->deliveryHeader->customer->name : $invoice->deliveryHeader->customer->company;
+        $invoiceTaxText = ($invoice->is_non_tax) ? '' : 'PPN';
+        $invoiceTaxValue = ($invoice->is_non_tax) ? '' : CHtml::encode(Yii::app()->numberFormatter->format('#,##0', floor(CHtml::value($invoice, 'deliveryHeader.calculatedTax'))));
+
+        $this->render('memo', array(
+            'invoice' => $invoice,
+            'invoiceHeaderText' => $invoiceHeaderText,
+            'invoiceCustomer' => $invoiceCustomer,
+            'invoiceTaxText' => $invoiceTaxText,
+            'invoiceTaxValue' => $invoiceTaxValue,
+        ));
+    }
+
+    public function actionReport() {
+        $invoiceHeader = new InvoiceHeader('search');
+        $invoiceHeader->unsetAttributes();
+        if (isset($_GET['InvoiceHeader']))
+            $invoiceHeader->attributes = $_GET['InvoiceHeader'];
+
+        $startDate = (isset($_GET['StartDate'])) ? $_GET['StartDate'] : '';
+        $endDate = (isset($_GET['EndDate'])) ? $_GET['EndDate'] : '';
+        $pageSize = (isset($_GET['PageSize'])) ? $_GET['PageSize'] : '';
+        $currentPage = (isset($_GET['page'])) ? $_GET['page'] : '';
+        $currentSort = (isset($_GET['sort'])) ? $_GET['sort'] : '';
+
+        $customerId = (isset($_GET['CustomerId'])) ? $_GET['CustomerId'] : '';
+
+        $dataProvider = $invoiceHeader->search();
+        $dataProvider->criteria->compare('deliveryHeader.customer_id', $customerId);
+        $dataProvider->criteria->join = "INNER JOIN " . DeliveryHeader::model()->tableName() . " deliveryHeader ON deliveryHeader.id = t.delivery_header_id INNER JOIN " . Customer::model()->tableName() . " customer ON deliveryHeader.customer_id = customer.id";
+
+        $page = array('size' => $pageSize, 'current' => $currentPage);
+        $date = array('attribute' => 't.date', 'start' => $startDate, 'end' => $endDate);
+
+        $sort = new CSort(get_class($invoiceHeader));
+        $sort->attributes = array('t.date', 'customer.name');
+
+        $dataProvider = ReportHelper::finalizeDataProvider($dataProvider, $page, $sort, $date);
+
+        if (isset($_GET['SaveExcel']))
+            $this->saveToExcel($dataProvider, array('startDate' => $startDate, 'endDate' => $endDate));
+
+        $this->render('report', array(
+            'invoiceHeader' => $invoiceHeader,
+            'dataProvider' => $dataProvider,
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'sort' => $sort,
+            'currentSort' => $currentSort,
+            'customerId' => $customerId,
+        ));
+    }
+
+    public function actionShowDeliveryAjax() {
+        if (Yii::app()->request->isAjaxRequest) {
+            $invoice = new Invoice();
+
+            $this->loadState($invoice);
+
+            $delivery = DeliveryHeader::model()->findByPk(isset($_POST['InvoiceHeader']['delivery_header_id']) ? $_POST['InvoiceHeader']['delivery_header_id'] : '');
+            if ($delivery === null)
+                $delivery = DeliveryHeader::model();
+
+            $this->renderPartial('_detail', array(
+                'invoice' => $invoice,
+                'delivery' => $delivery,
+            ));
+        }
+    }
+
+    public function actionDeliveryAjaxData() {
+        if (Yii::app()->request->isAjaxRequest) {
+            $invoice = new Invoice();
+
+            $this->loadState($invoice);
+
+            $object = array(
+                'delivery_header_number' => $invoice->header->deliveryHeader->number,
+                'code_number' => $invoice->header->codeNumber,
+                'customer_company' => $invoice->header->deliveryHeader->customer->company,
+            );
+
+            echo CJSON::encode($object);
+        }
+    }
+
+    protected function reportGrandTotal($dataProvider) {
+        $grandTotal = 0.00;
+
+        foreach ($dataProvider->data as $data)
+            $grandTotal += $data->deliveryHeader->grandTotal;
+
+        return $grandTotal;
+    }
+
+    protected function saveToExcel($dataProvider, array $options = array()) {
+        spl_autoload_unregister(array('YiiBase', 'autoload'));
+        include_once Yii::getPathOfAlias('ext.phpexcel.Classes') . DIRECTORY_SEPARATOR . 'PHPExcel.php';
+        spl_autoload_register(array('YiiBase', 'autoload'));
+
+        $objPHPExcel = new PHPExcel();
+
+        $documentProperties = $objPHPExcel->getProperties();
+        $documentProperties->setCreator('Galatech');
+        $documentProperties->setTitle('Laporan Penjualan Barang');
+
+        $worksheet = $objPHPExcel->setActiveSheetIndex(0);
+        $worksheet->setTitle('Penjualan');
+
+        $worksheet->getColumnDimension('A')->setAutoSize(true);
+        $worksheet->getColumnDimension('B')->setAutoSize(true);
+        $worksheet->getColumnDimension('C')->setAutoSize(true);
+        $worksheet->getColumnDimension('D')->setAutoSize(true);
+        $worksheet->getColumnDimension('E')->setAutoSize(true);
+        $worksheet->getColumnDimension('F')->setAutoSize(true);
+        $worksheet->getColumnDimension('G')->setAutoSize(true);
+        $worksheet->getColumnDimension('H')->setAutoSize(true);
+        $worksheet->getColumnDimension('I')->setAutoSize(true);
+        $worksheet->getColumnDimension('J')->setAutoSize(true);
+        $worksheet->getColumnDimension('K')->setAutoSize(true);
+        $worksheet->getColumnDimension('L')->setAutoSize(true);
+
+        $worksheet->mergeCells('A1:K1');
+        $worksheet->mergeCells('A2:K2');
+        $worksheet->mergeCells('A3:K3');
+
+        $worksheet->getStyle('A1:L5')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        $worksheet->getStyle('A1:L5')->getFont()->setBold(true);
+
+        $worksheet->setCellValue('A1', 'Galatech');
+        $worksheet->setCellValue('A2', 'Penjualan Barang');
+        $worksheet->setCellValue('A3', Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($options['startDate'])) . ' - ' . Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($options['endDate'])));
+
+        $worksheet->setCellValue('A5', 'Invoice #');
+        $worksheet->setCellValue('B5', 'Tanggal');
+        $worksheet->setCellValue('C5', 'Pengiriman #');
+        $worksheet->setCellValue('D5', 'Customer');
+
+        $worksheet->getStyle('A5:L5')->getBorders()->getBottom()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);
+
+        $worksheet->setCellValue('E5', 'Nama Barang');
+        $worksheet->setCellValue('F5', 'Ukuran');
+        $worksheet->setCellValue('G5', 'Jumlah');
+        $worksheet->setCellValue('H5', 'Satuan');
+        $worksheet->setCellValue('I5', 'Harga Satuan');
+        $worksheet->setCellValue('J5', 'Diskon');
+        $worksheet->setCellValue('K5', 'Disc Price');
+        $worksheet->setCellValue('L5', 'Total');
+
+        $counter = 8;
+        foreach ($dataProvider->data as $header) {
+            $worksheet->getStyle("C{$counter}")->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+
+            foreach ($header->deliveryHeader->deliveryDetails as $detail) {
+                $worksheet->getStyle("G{$counter}:L{$counter}")->getNumberFormat()->setFormatCode('#,##0');
+                $worksheet->setCellValue("A{$counter}", $detail->deliveryHeader->invoiceHeaders[0]->number);
+                $worksheet->setCellValue("B{$counter}", Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($detail->deliveryHeader->invoiceHeaders[0]->date)));
+                $worksheet->setCellValue("C{$counter}", $detail->deliveryHeader->number);
+                $worksheet->setCellValue("D{$counter}", $detail->deliveryHeader->customer->company);
+                $worksheet->setCellValue("E{$counter}", $detail->product->name);
+                $worksheet->setCellValue("F{$counter}", $detail->product->size);
+                $worksheet->setCellValue("G{$counter}", $detail->quantity);
+                $worksheet->setCellValue("H{$counter}", $detail->product->unit->name);
+                $worksheet->setCellValue("I{$counter}", $detail->unit_price);
+                $worksheet->setCellValue("J{$counter}", $detail->discount);
+                $worksheet->setCellValue("K{$counter}", $detail->priceAfterDiscount);
+                $worksheet->setCellValue("L{$counter}", $detail->total);
+
+                $counter++;
+            }
+        }
+
+        header('Content-Type: application/xlsx');
+        header('Content-Disposition: attachment;filename="penjualan.xlsx"');
+        header('Cache-Control: max-age=0');
+
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel2007');
+        $objWriter->save('php://output');
+
+        Yii::app()->end();
+    }
+
+    protected function loadState(&$invoice) {
+        if (isset($_POST['InvoiceHeader'])) {
+            $invoice->header->attributes = $_POST['InvoiceHeader'];
+        }
+    }
+
+    protected function saveToExcelAdmin($arr_category) {
+
+        spl_autoload_unregister(array('YiiBase', 'autoload'));
+        include_once Yii::getPathOfAlias('ext.phpexcel.Classes') . DIRECTORY_SEPARATOR . 'PHPExcel.php';
+        spl_autoload_register(array('YiiBase', 'autoload'));
+
+        $objPHPExcel = new PHPExcel();
+
+        $documentProperties = $objPHPExcel->getProperties();
+        $documentProperties->setCreator('PT. Galatech Jaya Abadi');
+        $documentProperties->setTitle('Faktur Penjualan');
+
+        $worksheet = $objPHPExcel->setActiveSheetIndex(0);
+        $worksheet->setTitle('Faktur Pajak');
+
+        $worksheet->getColumnDimension('A')->setAutoSize(true);
+        $worksheet->getColumnDimension('B')->setAutoSize(true);
+        $worksheet->getColumnDimension('C')->setAutoSize(true);
+        $worksheet->getColumnDimension('D')->setAutoSize(true);
+        $worksheet->getColumnDimension('E')->setAutoSize(true);
+        $worksheet->getColumnDimension('F')->setAutoSize(true);
+        $worksheet->getColumnDimension('G')->setAutoSize(true);
+        $worksheet->getColumnDimension('H')->setAutoSize(true);
+        $worksheet->getColumnDimension('I')->setAutoSize(true);
+        $worksheet->getColumnDimension('J')->setAutoSize(true);
+        $worksheet->getColumnDimension('K')->setAutoSize(true);
+        $worksheet->getColumnDimension('L')->setAutoSize(true);
+        $worksheet->getColumnDimension('M')->setAutoSize(true);
+        $worksheet->getColumnDimension('N')->setAutoSize(true);
+        $worksheet->getColumnDimension('P')->setAutoSize(true);
+        $worksheet->getColumnDimension('Q')->setAutoSize(true);
+        $worksheet->getColumnDimension('R')->setAutoSize(true);
+        $worksheet->getColumnDimension('S')->setAutoSize(true);
+
+        $worksheet->getStyle('A1')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        $worksheet->getStyle('A1:S3')->getFont()->setBold(true);
+
+        $worksheet->setCellValue('A1', 'FK');
+        $worksheet->setCellValue('B1', 'KD_JENIS_TRANSAKSI');
+        $worksheet->setCellValue('C1', 'FG_PENGGANTI');
+        $worksheet->setCellValue('D1', 'NOMOR_FAKTUR');
+        $worksheet->setCellValue('E1', 'MASA_PAJAK');
+        $worksheet->setCellValue('F1', 'TAHUN PAJAK');
+        $worksheet->setCellValue('G1', 'TANGGAL_FAKTUR');
+        $worksheet->setCellValue('H1', 'NPWP');
+        $worksheet->setCellValue('I1', 'NAMA');
+        $worksheet->setCellValue('J1', 'ALAMAT_LENGKAP');
+        $worksheet->setCellValue('K1', 'JUMLAH_DPP');
+        $worksheet->setCellValue('L1', 'JUMLAH_PPN');
+        $worksheet->setCellValue('M1', 'JUMLAH PPNBM');
+        $worksheet->setCellValue('N1', 'ID_KETERANGAN_TAMBAHAN');
+        $worksheet->setCellValue('O1', 'FG_UANG_MUKA');
+        $worksheet->setCellValue('P1', 'UANG_MUKA_DPP');
+        $worksheet->setCellValue('Q1', 'UANG_MUKA_PPN');
+        $worksheet->setCellValue('R1', 'UANG_MUKA_PPNBM');
+        $worksheet->setCellValue('S1', 'REFERENSI');
+
+        $worksheet->setCellValue('A2', 'LT');
+        $worksheet->setCellValue('B2', 'NPWP');
+        $worksheet->setCellValue('C2', 'NAMA');
+        $worksheet->setCellValue('D2', 'JALAN');
+        $worksheet->setCellValue('E2', 'BLOK');
+        $worksheet->setCellValue('F2', 'NOMOR');
+        $worksheet->setCellValue('G2', 'RT');
+        $worksheet->setCellValue('H2', 'RW');
+        $worksheet->setCellValue('I2', 'KECAMATAN');
+        $worksheet->setCellValue('J2', 'KELURAHAN');
+        $worksheet->setCellValue('K2', 'KABUPATEN');
+        $worksheet->setCellValue('L2', 'PROPINSI');
+        $worksheet->setCellValue('M2', 'KODE_POS');
+        $worksheet->setCellValue('N2', 'NOMOR_TELEPON');
+
+        $worksheet->setCellValue('A3', 'OF');
+        $worksheet->setCellValue('B3', 'KODE_OBJEK');
+        $worksheet->setCellValue('C3', 'NAMA');
+        $worksheet->setCellValue('D3', 'HARGA_SATUAN');
+        $worksheet->setCellValue('E3', 'JUMLAH_BARANG');
+        $worksheet->setCellValue('F3', 'HARGA_TOTAL');
+        $worksheet->setCellValue('G3', 'DISKON');
+        $worksheet->setCellValue('H3', 'DPP');
+        $worksheet->setCellValue('I3', 'PPN');
+        $worksheet->setCellValue('J3', 'TARIF_PPNBM');
+        $worksheet->setCellValue('K3', 'PPNBM');
+
+        $counter = 4;
+        foreach ($arr_category as $i => $header) {
+            $saleInvoice = InvoiceHeader::model()->findByPk($header['id']);
+
+            $taxForm = TaxForm::model()->findByAttributes(array('invoice_header_id' => $header['id']));
+
+            if ($taxForm) {
+                $npwp = $taxForm->cn_constant . $taxForm->cn_ordinal;
+                $npwpText = preg_replace("/[^[:alnum:][:space:]]/u", '', substr($npwp, 4));
+            } else
+                $npwpText = '';
+
+            $worksheet->setCellValue("A{$counter}", 'FK');
+            $objPHPExcel->getActiveSheet()->setCellValueExplicit("B{$counter}", '01', PHPExcel_Cell_DataType::TYPE_STRING);
+            //$worksheet->setCellValue("B{$counter}", '01');
+            $worksheet->setCellValue("C{$counter}", '0');
+            $worksheet->setCellValueExplicit("D{$counter}", $npwpText, PHPExcel_Cell_DataType::TYPE_STRING);
+            $worksheet->setCellValue("E{$counter}", Yii::app()->dateFormatter->format("MM", strtotime($header['date'])));
+            $worksheet->setCellValue("F{$counter}", Yii::app()->dateFormatter->format("yyyy", strtotime($header['date'])));
+            $worksheet->setCellValue("G{$counter}", Yii::app()->dateFormatter->format("dd/MM/yyyy", strtotime($header['date'])));
+
+            $worksheet->getStyle("H{$counter}")->getNumberFormat()->setFormatCode(PHPExcel_Style_NumberFormat::FORMAT_TEXT);
+
+            $worksheet->setCellValueExplicit("H{$counter}", CHtml::value($saleInvoice, 'deliveryHeader.customer.npwpText'), PHPExcel_Cell_DataType::TYPE_STRING);
+            // $worksheet->setCellValue("H{$counter}", CHtml::value($saleInvoice, 'deliveryHeader.customer.npwpText'));
+            $worksheet->setCellValue("I{$counter}", strtoupper(CHtml::value($saleInvoice, 'deliveryHeader.customer.company')));
+            $worksheet->setCellValue("J{$counter}", strtoupper(CHtml::value($saleInvoice, 'deliveryHeader.customer.address')));
+            $objPHPExcel->getActiveSheet()->getStyle("K{$counter}")->getNumberFormat()->setFormatCode('#,##0');
+            $worksheet->setCellValue("K{$counter}", floor(CHtml::encode(CHtml::value($saleInvoice, 'subTotal'))));
+            $objPHPExcel->getActiveSheet()->getStyle("L{$counter}")->getNumberFormat()->setFormatCode('#,##0');
+            $worksheet->setCellValue("L{$counter}", floor(CHtml::encode(CHtml::value($saleInvoice, 'taxValue'))));
+            $worksheet->setCellValue("M{$counter}", '0');
+            $worksheet->setCellValue("N{$counter}", '0');
+            $worksheet->setCellValue("O{$counter}", '0');
+            $worksheet->setCellValue("P{$counter}", '0');
+            $worksheet->setCellValue("Q{$counter}", '0');
+            $worksheet->setCellValue("R{$counter}", '0');
+            $worksheet->setCellValue("S{$counter}", '0');
+
+            $counter++;
+
+            $nomor = 1;
+            foreach ($saleInvoice->deliveryHeader->deliveryDetails as $i => $detail) {
+                $worksheet->setCellValue("A{$counter}", 'OF');
+                $worksheet->setCellValue("B{$counter}", CHtml::value($detail, 'product.code'));
+
+                $worksheet->getStyle("C{$counter}")->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+                $worksheet->setCellValue("C{$counter}", CHtml::value($detail, 'productNameSize'));
+
+                $objPHPExcel->getActiveSheet()->getStyle("D{$counter}")->getNumberFormat()->setFormatCode('#,##0');
+                $worksheet->setCellValue("D{$counter}", floor(CHtml::encode(CHtml::value($detail, 'unit_price'))));
+                $objPHPExcel->getActiveSheet()->getStyle("E{$counter}")->getNumberFormat()->setFormatCode('#,##0');
+                $worksheet->setCellValue("E{$counter}", floor(CHtml::encode(CHtml::value($detail, 'quantity'))));
+                $objPHPExcel->getActiveSheet()->getStyle("F{$counter}")->getNumberFormat()->setFormatCode('#,##0');
+                $worksheet->setCellValue("F{$counter}", floor(CHtml::encode(CHtml::value($detail, 'total'))));
+                $worksheet->setCellValue("G{$counter}", CHtml::encode(0));
+                $objPHPExcel->getActiveSheet()->getStyle("H{$counter}")->getNumberFormat()->setFormatCode('#,##0');
+                $worksheet->setCellValue("H{$counter}", floor(CHtml::encode(CHtml::value($detail, 'total'))));
+                $objPHPExcel->getActiveSheet()->getStyle("I{$counter}")->getNumberFormat()->setFormatCode('#,##0');
+                $worksheet->setCellValue("I{$counter}", floor(CHtml::encode(CHtml::value($detail, 'ppn'))));
+                $worksheet->setCellValue("J{$counter}", CHtml::encode(0));
+                $worksheet->setCellValue("K{$counter}", CHtml::encode(0));
+
+                $counter++;
+            }
+
+//			$counter++;
+        }
+
+
+//		header('Content-Type: application/xls');
+        header('Content-Disposition: attachment;filename="Faktur Pajak.csv"');
+        header('Cache-Control: max-age=0');
+
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'CSV');
+        $objWriter->save('php://output');
+
+        Yii::app()->end();
+    }
+
+    public function loadModel($id) {
+        $model = InvoiceHeader::model()->findByPk($id);
+        if ($model === null)
+            throw new CHttpException(404, 'The requested page does not exist.');
+        return $model;
+    }
+}

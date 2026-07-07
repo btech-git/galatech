@@ -1,0 +1,37 @@
+<h1>Kelola Data Transfer Barang</h1>
+
+<?php $this->widget('zii.widgets.grid.CGridView', array(
+	'id'=>'delivery-grid',
+	'dataProvider'=>$transfer->search(),
+	'filter'=>$transfer,
+	'columns'=>array(
+		'number',
+		array(
+			'header' => 'Tanggal',
+			'name' => 'date',
+			'value' => 'Yii::app()->dateFormatter->format("d MMMM yyyy", $data->date)'
+		),
+		array(
+			'header' => 'Dari Gudang',
+			'name' => 'warehouse_id_from',
+			'filter' => CHtml::listData(Warehouse::model()->findAll(), 'id', 'name'),
+			'value' => '$data->warehouseIdFrom->name',
+		),
+		array(
+			'header' => 'Ke Gudang',
+			'name' => 'warehouse_id_to',
+			'filter' => CHtml::listData(Warehouse::model()->findAll(), 'id', 'name'),
+			'value' => '$data->warehouseIdTo->name',
+		),
+		array(
+			'name' => 'admin_id',
+			'filter' => CHtml::listData(Admin::model()->findAll(), 'id', 'name'),
+			'value' => '$data->admin->name',
+		),
+		array(
+			'class'=>'CButtonColumn',
+			'template' => '{view}{delete}'
+		),
+	),
+)); ?>
+

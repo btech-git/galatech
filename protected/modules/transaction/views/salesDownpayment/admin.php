@@ -1,0 +1,36 @@
+<h1>Kelola Data Uang Muka Penjualan</h1>
+
+<?php
+$this->widget('zii.widgets.grid.CGridView', array(
+    'id' => 'salesDownpayment-grid',
+    'dataProvider' => $salesDownpayment->search(),
+    'filter' => $salesDownpayment,
+    'columns' => array(
+        'number',
+        array(
+            'header' => 'Tanggal',
+            'name' => 'date',
+            'value' => 'Yii::app()->dateFormatter->format("d MMMM yyyy", $data->date)'
+        ),
+        array(
+            'name' => 'customer_id',
+            'filter' => CHtml::listData(Customer::model()->findAll(array('order' => 'name ASC')), 'id', 'name'),
+            'value' => 'CHtml::encode(CHtml::value($data, "customer.company"))',
+        ),
+        array(
+            'name' => 'account_id',
+            'filter' => CHtml::listData(Account::model()->findAllByAttributes(array('account_category_id' => 1)), 'id', 'name'),
+            'value' => 'CHtml::encode(CHtml::value($data, "account.name"))',
+        ),
+        array(
+            'name' => 'is_inactive',
+            'filter' => array(ActiveRecord::ACTIVE => 'Active', ActiveRecord::INACTIVE => 'Inactive'),
+            'value' => '$data->status()',
+        ),
+        array(
+            'class' => 'CButtonColumn',
+            'updateButtonUrl' => 'CHtml::normalizeUrl(array("create", "id"=>$data->id))',
+        ),
+    ),
+));
+?>

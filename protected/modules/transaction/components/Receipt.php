@@ -1,0 +1,95 @@
+<?php
+
+class Receipt extends CComponent {
+
+    public $header;
+    public $details;
+
+    public function __construct() {
+        $this->header = new ReceiptHeader();
+        $this->details = array();
+    }
+
+    public function copyFromDb($id) {
+        $this->header = ReceiptHeader::model()->resetScope()->findByPk($id);
+        $this->details = ReceiptDetail::model()->resetScope()->findAllByAttributes(array('receipt_header_id' => $id));
+    }
+
+    public function addInvoice($id) {
+        $invoice = InvoiceHeader::model()->findByPk($id);
+
+        if ($invoice !== null) {
+            $exist = false;
+            foreach ($this->details as $i => $detail) {
+                if ($invoice->id === $detail->invoice_header_id) {
+                    $exist = true;
+                    break;
+                }
+            }
+
+            if ($invoice->deliveryHeader->customer_id !== $this->header->customer_id)
+                $exist = true;
+
+            if (!$exist) {
+                $detail = new ReceiptDetail();
+                $detail->invoice_header_id = $invoice->id;
+                $this->details[] = $detail;
+            }
+        }
+    }
+
+    public function removeDetailAt($index) {
+        array_splice($this->details, $index, 1);
+    }
+
+    public function resetDetail() {
+        $this->details = array();
+    }
+
+    public function validate() {
+        $valid = $this->header->validate();
+
+        if (count($this->details) > 0) {
+            foreach ($this->details as $detail) {
+                $fields = array('memo', 'invoice_header_id');
+                $valid = $detail->validate($fields) && $valid;
+            }
+        } else
+            $valid = false;
+
+        return $valid;
+    }
+
+    public function save($runValidation) {
+        $this->header->grand_total = $this->getTotalInvoice();
+        $valid = $this->header->save($runValidation);
+
+        foreach ($this->details as $detail) {
+            $detail->receipt_header_id = $this->header->id;
+            $valid = $detail->save($runValidation) && $valid;
+        }
+
+        return $valid;
+    }
+
+    public function update() {
+        $this->header->grand_total = $this->getTotalInvoice();
+        $valid = $this->header->update();
+
+        foreach ($this->details as $detail)
+            $valid = $detail->update() && $valid;
+
+        return $valid;
+    }
+
+    public function getTotalInvoice() {
+        $total = 0.00;
+
+        foreach ($this->details as $detail)
+            $total += $detail->invoiceHeader->deliveryHeader->grandTotal;
+
+        return $total;
+    }
+}
+
+?>

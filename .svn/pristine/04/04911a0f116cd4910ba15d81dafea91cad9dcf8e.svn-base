@@ -1,0 +1,32 @@
+<?php
+
+class ChequeTransaction extends CComponent {
+
+    public $header;
+
+    public function __construct() {
+        $this->header = new Cheque();
+    }
+
+    public function copyFromDb($id) {
+        $this->header = Cheque::model()->resetScope()->findByPk($id);
+    }
+
+    public function validate() {
+        $valid = $this->header->validate();
+
+        return $valid;
+    }
+
+    public function save($runValidation) {
+        $valid = $this->header->save($runValidation);
+
+        return $valid;
+    }
+
+    public function update() {
+        $valid = $this->header->update();
+
+        return $valid;
+    }
+}

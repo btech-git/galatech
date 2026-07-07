@@ -1,0 +1,141 @@
+<?php
+
+/**
+ * This is the model class for table "tblgt_delivery_detail".
+ *
+ * The followings are the available columns in table 'tblgt_delivery_detail':
+ * @property integer $id
+ * @property string $product_name
+ * @property integer $quantity
+ * @property string $unit_price
+ * @property string $discount
+ * @property string $average_purchase_price
+ * @property integer $delivery_header_id
+ * @property integer $product_id
+ * @property integer $is_inactive
+ *
+ * The followings are the available model relations:
+ * @property DeliveryHeader $deliveryHeader
+ * @property Product $product
+ */
+class DeliveryDetail extends ActiveRecord {
+
+    /**
+     * Returns the static model of the specified AR class.
+     * @param string $className active record class name.
+     * @return DeliveryDetail the static model class
+     */
+    public static function model($className = __CLASS__) {
+        return parent::model($className);
+    }
+
+    /**
+     * @return string the associated database table name
+     */
+    public function tableName() {
+        return 'tblgt_delivery_detail';
+    }
+
+    /**
+     * @return array validation rules for model attributes.
+     */
+    public function rules() {
+        // NOTE: you should only define rules for those attributes that
+        // will receive user inputs.
+        return array(
+            array('product_name, delivery_header_id, product_id', 'required'),
+            array('quantity, delivery_header_id, product_id, is_inactive', 'numerical', 'integerOnly' => true),
+            array('product_name', 'length', 'max' => 200),
+            array('unit_price, average_purchase_price', 'length', 'max' => 18),
+            array('discount', 'length', 'max' => 10),
+            // The following rule is used by search().
+            // Please remove those attributes that should not be searched.
+            array('id, product_name, quantity, unit_price, discount, average_purchase_price, delivery_header_id, product_id, is_inactive', 'safe', 'on' => 'search'),
+        );
+    }
+
+    /**
+     * @return array relational rules.
+     */
+    public function relations() {
+        // NOTE: you may need to adjust the relation name and the related
+        // class name for the relations automatically generated below.
+        return array(
+            'deliveryHeader' => array(self::BELONGS_TO, 'DeliveryHeader', 'delivery_header_id'),
+            'product' => array(self::BELONGS_TO, 'Product', 'product_id'),
+        );
+    }
+
+    /**
+     * @return array customized attribute labels (name=>label)
+     */
+    public function attributeLabels() {
+        return array(
+            'id' => 'ID',
+            'product_name' => 'Product Name',
+            'quantity' => 'Quantity',
+            'unit_price' => 'Unit Price',
+            'discount' => 'Discount',
+            'average_purchase_price' => 'Average Purchase Price',
+            'delivery_header_id' => 'Delivery Header',
+            'product_id' => 'Product',
+            'is_inactive' => 'Is Inactive',
+        );
+    }
+
+    /**
+     * Retrieves a list of models based on the current search/filter conditions.
+     * @return CActiveDataProvider the data provider that can return the models based on the search/filter conditions.
+     */
+    public function search() {
+        // Warning: Please modify the following code to remove attributes that
+        // should not be searched.
+
+        $criteria = new CDbCriteria;
+
+        $criteria->compare('id', $this->id);
+        $criteria->compare('product_name', $this->product_name, true);
+        $criteria->compare('quantity', $this->quantity);
+        $criteria->compare('unit_price', $this->unit_price, true);
+        $criteria->compare('discount', $this->discount, true);
+        $criteria->compare('average_purchase_price', $this->average_purchase_price, true);
+        $criteria->compare('delivery_header_id', $this->delivery_header_id);
+        $criteria->compare('product_id', $this->product_id);
+        $criteria->compare('is_inactive', $this->is_inactive);
+
+        return new CActiveDataProvider($this, array(
+            'criteria' => $criteria,
+        ));
+    }
+
+    public function getProductNameSize() {
+        return $this->product_name . " " . $this->product->size;
+    }
+
+    public function getCurrentStock($warehouseId = false) {
+        $sql = SqlGenerator::localStock();
+
+        $value = CActiveRecord::$db->createCommand($sql)->queryScalar(array(
+            ':product_id' => $this->product_id,
+            ':warehouse_id' => ($warehouseId !== false) ? $warehouseId : $this->deliveryHeader->warehouse_id,
+        ));
+
+        return ($value === false) ? 0 : $value;
+    }
+
+    public function getPriceAfterDiscount() {
+        return $this->unit_price * (100 - $this->discount) / 100;
+    }
+
+    public function getTotal() {
+        return $this->quantity * $this->getPriceAfterDiscount();
+    }
+
+    public function getPpn() {
+        return $this->getTotal() * $this->deliveryHeader->tax / 100;
+    }
+
+    public function getAveragePurchasePriceTotal() {
+        return $this->quantity * $this->average_purchase_price;
+    }
+}

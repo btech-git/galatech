@@ -1,0 +1,309 @@
+<?php
+
+class PurchaseAssetController extends SelectionController
+{
+
+	public function filters()
+	{
+		return array(
+			'access',
+		);
+	}
+
+	public function filterAccess($filterChain)
+	{
+		$taxCreateValid = Yii::app()->user->checkAccess('tPurchaseCreate') || Yii::app()->user->checkAccess('tsPurchaseCreate');
+		$nonTaxCreateValid = Yii::app()->user->checkAccess('ntPurchaseCreate');
+		$taxEditValid = Yii::app()->user->checkAccess('tPurchaseEdit') || Yii::app()->user->checkAccess('tsPurchaseEdit');
+		$nonTaxEditValid = Yii::app()->user->checkAccess('ntPurchaseEdit');
+		
+		if ($filterChain->action->id === 'create')
+		{
+			$params = $filterChain->controller->actionParams;
+			
+			if (isset($params['id']))
+			{
+				if (!($taxEditValid || $nonTaxEditValid))
+					$this->redirect(array('/site/login'));
+			}
+			else
+			{
+				if (isset($params['nt']))
+				{
+					if (!$nonTaxCreateValid)
+						$this->redirect(array('/site/login'));
+				}
+				else
+				{
+					if (!$taxCreateValid)
+						$this->redirect(array('/site/login'));
+				}
+			}
+		}
+		if ($filterChain->action->id === 'addItemAjax' || $filterChain->action->id === 'removeProductAjax' || $filterChain->action->id === 'totalAjaxData' || $filterChain->action->id === 'memo' || $filterChain->action->id === 'view')
+		{
+			if (!($taxCreateValid || $nonTaxCreateValid || $taxEditValid || $nonTaxEditValid))
+				$this->redirect(array('/site/login'));
+		}
+		if ($filterChain->action->id === 'delete' || $filterChain->action->id === 'admin')
+		{
+			if (!($taxEditValid || $nonTaxEditValid))
+				$this->redirect(array('/site/login'));
+		}
+		if ($filterChain->action->id === 'report')
+		{
+			if ((Yii::app()->user->checkAccess('ntPurchaseReport') || Yii::app()->user->checkAccess('tPurchaseReport') || Yii::app()->user->checkAccess('tsPurchaseReport')))
+				$this->redirect(array('/site/login'));
+		}
+
+		$filterChain->run();
+	}
+
+	public function actionCreate()
+	{
+		$purchaseAsset = new PurchaseAsset();
+
+		if (isset($_GET['id']))
+			$purchaseAsset->copyFromDb($_GET['id']);
+
+		if ($purchaseAsset->header->isNewRecord)
+			$purchaseAsset->header->number = CodeNumber::make($purchaseAsset->header, 'number', 'PRC');
+
+		$purchaseAsset->header->admin_id = Yii::app()->user->id;
+		$this->loadState($purchaseAsset);
+
+		$error = false;
+
+		if (isset($_POST['Submit']))
+		{
+			$dbTransaction = CActiveRecord::$db->beginTransaction();
+			try
+			{
+				if ($purchaseAsset->validate() && $purchaseAsset->save(false))
+				{
+					$dbTransaction->commit();
+					Yii::app()->session['PurchaseAssetMemoAllowed'] = true;
+					$this->redirect(array('view', 'id' => $purchaseAsset->header->id));
+				}
+				else
+				{
+					$dbTransaction->rollback();
+					$error = true;
+				}
+			}
+			catch (Exception $e)
+			{
+				$dbTransaction->rollback();
+				throw new CHttpException($e->getCode(), $e->getMessage());
+			}
+		}
+
+		$this->render('create', array(
+			'purchaseAsset' => $purchaseAsset,
+			'error' => $error,
+		));
+	}
+
+	public function actionView($id)
+	{
+		$purchaseAsset = PurchaseAssetHeader::model()->findByPk($id);
+
+		$this->render('view', array(
+			'purchaseAsset' => $purchaseAsset,
+		));
+	}
+
+	public function actionDelete($id)
+	{
+		if (Yii::app()->request->isPostRequest)
+		{
+			$purchaseAssetHeader = PurchaseAssetHeader::model()->resetScope()->findByPk($id);
+			if ($purchaseAssetHeader !== null)
+			{
+				$purchaseAssetHeader->is_inactive = !$purchaseAssetHeader->is_inactive;
+				$purchaseAssetHeader->update(array('is_inactive'));
+			}
+
+			if (!isset($_GET['ajax']))
+				$this->redirect(isset($_POST['returnUrl']) ? $_POST['returnUrl'] : array('admin'));
+		}
+		else
+			throw new CHttpException(400, 'Invalid request. Please do not repeat this request again.');
+	}
+
+	public function actionMemo($id)
+	{
+		if (!(Yii::app()->user->checkAccess('administrator')))
+		{
+			if (!(isset(Yii::app()->session['PurchaseAssetMemoAllowed']) && Yii::app()->session['PurchaseAssetMemoAllowed'] === true))
+				$this->redirect(array('admin'));
+		}
+		
+		Yii::app()->session->remove('PurchaseAssetMemoAllowed');
+		
+		$purchaseAsset = PurchaseAssetHeader::model()->findByPk($id);
+		
+		$purchaseAssetSupplier = ($purchaseAsset->is_non_tax) ? $purchaseAsset->supplier->name : $purchaseAsset->supplier->company;
+		$purchaseAssetHeaderText = ($purchaseAsset->is_non_tax) ? '' : 'PT. Galatech';
+
+		$this->render('memo', array(
+			'purchaseAsset' => $purchaseAsset,
+			'purchaseAssetSupplier' => $purchaseAssetSupplier,
+			'purchaseAssetHeaderText' => $purchaseAssetHeaderText,
+		));
+	}
+
+	public function actionAdmin()
+	{
+		$purchaseAsset = new PurchaseAssetHeader('search');
+		$purchaseAsset->unsetAttributes();
+
+		if (isset($_GET['PurchaseAssetHeader']))
+			$purchaseAsset->attributes = $_GET['PurchaseAssetHeader'];
+
+		$dataProvider = $purchaseAsset->search();
+		$dataProvider->model->resetScope();
+
+		$this->render('admin', array(
+			'purchaseAsset' => $purchaseAsset,
+			'dataProvider' => $dataProvider,
+		));
+	}
+
+	public function actionReport()
+	{
+		$purchaseAssetHeader = new PurchaseAssetHeader('search');
+		$purchaseAssetHeader->unsetAttributes();
+		if (isset($_GET['PurchaseAssetHeader']))
+			$purchaseAssetHeader->attributes = $_GET['PurchaseAssetHeader'];
+
+		$startDate = (isset($_GET['StartDate'])) ? $_GET['StartDate'] : '';
+		$endDate = (isset($_GET['EndDate'])) ? $_GET['EndDate'] : '';
+		$pageSize = (isset($_GET['PageSize'])) ? $_GET['PageSize'] : '';
+		$currentPage = (isset($_GET['page'])) ? $_GET['page'] : '';
+		$currentSort = (isset($_GET['sort'])) ? $_GET['sort'] : '';
+
+		$dataProvider = $purchaseAssetHeader->search();
+//                $dataProvider->criteria->with = array('supplier');
+
+		$page = array('size' => $pageSize, 'current' => $currentPage);
+		$date = array('attribute' => 'date', 'start' => $startDate, 'end' => $endDate);
+
+		$sort = new CSort(get_class($purchaseAssetHeader));
+		$sort->attributes = array('date');
+
+		$dataProvider = ReportHelper::finalizeDataProvider($dataProvider, $page, $sort, $date);
+
+		$this->render('report', array(
+			'purchaseAssetHeader' => $purchaseAssetHeader,
+			'dataProvider' => $dataProvider,
+			'startDate' => $startDate,
+			'endDate' => $endDate,
+			'sort' => $sort,
+			'currentSort' => $currentSort,
+		));
+	}
+
+	public function actionAddItemAjax($id)
+	{
+		if (Yii::app()->request->isAjaxRequest)
+		{
+			$purchaseAsset = new PurchaseAsset();
+
+			if (!empty($id))
+				$purchaseAsset->copyFromDb($id);
+
+			if (!isset($_POST['PurchaseAssetDetail']))
+				$purchaseAsset->details = array();
+
+			$this->loadState($purchaseAsset);
+
+			$purchaseAsset->addItem();
+
+			$this->renderPartial('_detail', array(
+				'purchaseAsset' => $purchaseAsset,
+				'error' => false,
+			));
+		}
+	}
+
+	public function actionRemoveProductAjax($id, $index)
+	{
+		if (Yii::app()->request->isAjaxRequest)
+		{
+			$purchaseAsset = new PurchaseAsset();
+
+			if (!empty($id))
+				$purchaseAsset->copyFromDb($id);
+
+			$this->loadState($purchaseAsset);
+
+			$purchaseAsset->removeProductAt($index);
+
+			$this->renderPartial('_detail', array(
+				'purchaseAsset' => $purchaseAsset,
+			));
+		}
+	}
+
+	public function actionTotalAjaxData($id, $index)
+	{
+		if (Yii::app()->request->isAjaxRequest)
+		{
+			$purchaseAsset = new PurchaseAsset();
+
+			if (!empty($id))
+				$purchaseAsset->copyFromDb($id);
+
+			if (!isset($_POST['PurchaseAssetDetail']))
+				$purchaseAsset->details = array();
+
+			$this->loadState($purchaseAsset);
+
+			$unitPrice = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', CHtml::value($purchaseAsset->details[$index], 'unit_price')));
+			$total = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', CHtml::value($purchaseAsset->details[$index], 'total')));
+			$subTotal = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $purchaseAsset->subTotal));
+
+			echo CJSON::encode(array(
+				'unitPrice' => $unitPrice,
+				'total' => $total,
+				'subTotal' => $subTotal,
+			));
+		}
+	}
+
+	protected function reportGrandTotal($dataProvider)
+	{
+		$grandTotal = 0.00;
+
+		foreach ($dataProvider->data as $data)
+			$grandTotal += $data->subTotal;
+
+		return $grandTotal;
+	}
+
+	protected function loadState(&$purchaseAsset)
+	{
+		if (isset($_POST['PurchaseAssetHeader']))
+		{
+			$purchaseAsset->header->attributes = $_POST['PurchaseAssetHeader'];
+		}
+		if (isset($_POST['PurchaseAssetDetail']))
+		{
+			foreach ($_POST['PurchaseAssetDetail'] as $i => $item)
+			{
+				if (isset($purchaseAsset->details[$i]))
+					$purchaseAsset->details[$i]->attributes = $item;
+				else
+				{
+					$detail = new PurchaseAssetDetail();
+					$detail->attributes = $item;
+					$purchaseAsset->details[] = $detail;
+				}
+			}
+			if (count($_POST['PurchaseAssetDetail']) < count($purchaseAsset->details))
+				array_splice($purchaseAsset->details, $i + 1);
+		}
+	}
+}
+

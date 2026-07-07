@@ -1,0 +1,83 @@
+<?php
+Yii::app()->clientScript->registerCss('_report', '
+        .width1-1 { width: 20% }
+        .width1-2 { width: 65% }
+        .width1-3 { width: 15% }
+        
+        .width2-1 { width: 10% }
+        .width2-2 { width: 15% }
+        .width2-3 { width: 10% }
+		.width2-4 { width: 15% }
+		.width2-5 { width: 10% }
+		.width2-6 { width: 15% }
+		.width2-7 { width: 10% }
+		.width2-8 { width: 15% }
+');
+?>
+
+<div style="font-weight: bold; text-align: center">
+	<div style="font-size: larger">PT. GALATECH</div>
+	<div style="font-size: larger">Laporan Penerimaan Barang berdasarkan Produk</div>
+	<div><?php echo CHtml::encode(Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($startDate))) . ' &nbsp;&ndash;&nbsp; ' . CHtml::encode(Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($endDate))); ?></div>
+</div>
+
+<br />
+
+<table class="report">
+	<tr id="header1">
+		<th class="width1-1">Kategori</th>
+		<th class="width1-2">Nama Produk</th>
+		<th class="width1-3">Ukuran</th>
+	</tr>
+        <tr id="header2">
+			<td colspan="3">
+				<table>
+					<tr>
+					   <th class="width2-1">Penerimaan #</th>
+					   <th class="width2-2">Tanggal</th>
+					   <th class="width2-3">Pembelian #</th>
+					   <th class="width2-4">Supplier</th>
+					   <th class="width2-5">Jumlah</th>
+					   <th class="width2-6">Harga</th>
+					   <th class="width2-7">Disc</th>
+					   <th class="width2-8">Total</th>
+					</tr>
+				</table>
+			</td>
+        </tr>
+        <?php foreach ($dataProvider->data as $header): ?>
+			<tr class="items1">
+				<td class="width1-1" style="text-align:center"><?php echo CHtml::encode(CHtml::value($header, 'category.name')); ?></td>
+				<td class="width1-2" style="text-align:center"><?php echo CHtml::encode(CHtml::value($header, 'name')); ?></td>
+				<td class="width1-3" style="text-align:center"><?php echo CHtml::encode(CHtml::value($header, 'size')); ?></td>
+			</tr>
+			<tr class="items2">
+				<td colspan="3">
+					<table>
+						<?php foreach ($header->receiveDetails as $detail): ?>
+							<tr>
+								<td class="width2-1" style="text-align:center"><?php echo CHtml::encode(CHtml::value($detail, 'receiveHeader.number')); ?></td>
+								<td class="width2-2" style="text-align:center"><?php echo CHtml::encode(Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($detail->receiveHeader->date))); ?></td>
+								<td class="width2-3" style="text-align:center"><?php echo CHtml::encode(CHtml::value($detail, 'receiveHeader.purchaseHeader.number')); ?></td>
+								<td class="width2-4" style="text-align:center"><?php echo CHtml::encode(CHtml::value($detail, 'receiveHeader.purchaseHeader.supplier.company')); ?></td>														
+								<td class="width2-5" style="text-align: center"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', CHtml::value($detail, 'quantity'))); ?></td>
+								<td class="width2-6" style="text-align: right"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', CHtml::value($detail, 'unitPrice'))); ?></td>
+								<td class="width2-7" style="text-align: right"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', CHtml::value($detail, 'discount'))); ?></td>
+								<td class="width2-8" style="text-align: right"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', CHtml::value($detail, 'total'))); ?></td>
+							</tr>
+						<?php endforeach; ?>
+							<tr>
+								<td class="width2-1" style="border-top: 1px solid"></td>
+								<td class="width2-2" style="border-top: 1px solid"></td>
+								<td class="width2-3" style="border-top: 1px solid; font-weight: bold; font-size: small">TOTAL</td>
+								<td class="width2-4" style="border-top: 1px solid"></td>
+								<td class="width2-5" style="border-top: 1px solid; font-weight: bold; text-align: right; font-size: small"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', ceil(CHtml::value($header, 'totalQuantityReceive')))); ?></td>
+								<td class="width2-6" style="border-top: 1px solid"></td>
+								<td class="width2-7" style="border-top: 1px solid"></td>
+								<td class="width2-8" style="border-top: 1px solid; font-weight: bold; text-align: right; font-size: small"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', ceil(CHtml::value($header, 'totalReceive')))); ?></td>
+							</tr>
+					</table>
+				</td>
+			</tr>
+<?php endforeach; ?>
+</table>

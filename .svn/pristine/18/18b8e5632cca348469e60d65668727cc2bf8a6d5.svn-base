@@ -1,0 +1,26 @@
+<?php
+
+class PurchaseChequeTransaction extends CComponent {
+
+    public $header;
+
+    public function __construct() {
+        $this->header = new PurchaseCheque();
+    }
+
+    public function copyFromDb($id) {
+        $this->header = PurchaseCheque::model()->resetScope()->findByPk($id);
+    }
+
+    public function validate() {
+        $valid = $this->header->validate();
+
+        return $valid;
+    }
+
+    public function save($runValidation) {
+        $valid = $this->header->save($runValidation);
+
+        return $valid;
+    }
+}

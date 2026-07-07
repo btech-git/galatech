@@ -1,0 +1,61 @@
+<?php
+Yii::app()->clientScript->registerCss('_report', '
+	.width1-1 { width: 12% }
+	.width1-2 { width: 12% }
+	.width1-3 { width: 12% }
+	.width1-4 { width: 25% }
+	.width1-5 { width: 15% }
+	.width1-6 { width: 12% }
+	.width1-7 { width: 12% }
+');
+?>
+
+<div style="font-weight: bold; text-align: center">
+	<div style="font-size: larger">PT. Galatech Jaya Abadi</div>
+	<div style="font-size: larger">Laporan Penjualan</div>
+	<div><?php echo CHtml::encode(Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($startDate))) . ' &nbsp;&ndash;&nbsp; ' . CHtml::encode(Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($endDate))); ?></div>
+</div>
+
+<br />
+
+<table class="report">
+        <tr id="header1">
+			<th class="width1-1">Invoice #</th>
+			<th class="width1-2">Tanggal</th>
+			<th class="width1-3">Pengiriman #</th>
+			<th class="width1-4">Customer</th>
+			<th class="width1-5">Grand Total</th>
+			<th class="width1-6">DPP</th>
+			<th class="width1-7">Profit / Loss</th>
+        </tr>
+        <tr id="header2">
+			<td colspan="7"></td>
+        </tr>
+    
+		<?php 
+            $saleTotal = 0;
+            $averagePriceTotal = 0;
+            $profitLossTotal = 0;
+		?>
+		
+        <?php foreach ($dataProvider->data as $header): ?>
+			<tr class="items1">
+				<td class="width1-1"><?php echo CHtml::encode(CHtml::value($header, 'codeNumber')); ?></td>
+				<td class="width1-2" style="text-align: right"><?php echo CHtml::encode($header->date); ?></td>
+				<td class="width1-3"><?php echo CHtml::encode(CHtml::value($header, 'deliveryHeader.number')); ?></td>
+				<td class="width1-4"><?php echo CHtml::encode(CHtml::value($header, ($header->is_non_tax) ? 'deliveryHeader.customer.name' : 'deliveryHeader.customer.company')); ?></td>
+				<td class="width1-5" style="text-align: right"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', $header->deliveryHeader->subTotal)); ?></td>
+				<td class="width1-6" style="text-align: right"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', $header->deliveryHeader->averagePurchasePriceTotalSum)); ?></td>
+				<td class="width1-7" style="text-align: right"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', $header->deliveryHeader->profitLoss)); ?></td>
+			</tr>
+			<?php $saleTotal += $header->deliveryHeader->grandTotalPayment; ?>
+			<?php $averagePriceTotal += $header->deliveryHeader->averagePurchasePriceTotalSum; ?>
+			<?php $profitLossTotal += $header->deliveryHeader->profitLoss; ?>
+        <?php endforeach; ?>
+        <tr>
+			<td colspan="4" style="border-top: 1px solid; font-weight: bold; text-align: right">TOTAL</td>
+			<td style="border-top: 1px solid; font-weight: bold; text-align: right"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', floor($saleTotal))); ?></td>
+			<td style="border-top: 1px solid; font-weight: bold; text-align: right"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', floor($averagePriceTotal))); ?></td>
+			<td style="border-top: 1px solid; font-weight: bold; text-align: right"><?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', floor($profitLossTotal))); ?></td>
+        </tr>
+</table>

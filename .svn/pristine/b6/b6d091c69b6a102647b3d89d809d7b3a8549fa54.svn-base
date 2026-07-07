@@ -1,0 +1,143 @@
+<h1>Penerimaan Faktur Pembelian</h1>
+
+<div class="form">
+
+    <?php echo CHtml::beginForm(); ?>
+
+    <div class="container">
+        <div class="span-12">
+<!--            <div class="row">
+                <?php /*echo CHtml::label('Penerimaan Faktur #', false); ?>
+                <?php echo CHtml::encode(CHtml::value($purchaseInvoice->header, 'number')); ?>
+                <?php echo CHtml::error($purchaseInvoice->header, 'number');*/ ?>
+            </div>-->
+
+            <div class="row">
+                <?php echo CHtml::label('Tanggal', false); ?>
+                <?php
+                $this->widget('zii.widgets.jui.CJuiDatePicker', array(
+                    'model' => $purchaseInvoice->header,
+                    'attribute' => 'date',
+                    // additional javascript options for the date picker plugin
+                    'options' => array(
+                        'dateFormat' => 'yy-mm-dd',
+                    ),
+                    'htmlOptions' => array(
+                        'readonly' => true,
+                    ),
+                ));
+                ?>
+                <?php echo CHtml::error($purchaseInvoice->header, 'date'); ?>
+            </div>
+
+            <div class="row">
+                <?php echo CHtml::label('Catatan', ''); ?>
+                <?php echo CHtml::activeTextArea($purchaseInvoice->header, 'note', array('rows' => 5, 'cols' => 30)); ?>
+                <?php echo CHtml::error($purchaseInvoice->header, 'note'); ?>
+            </div>
+        </div>
+
+        <div class="span-12 last">
+            <div class="row">
+                <?php echo CHtml::label('Pembelian #', ''); ?>
+                <?php echo CHtml::activeTextField($purchaseInvoice->header, 'purchase_header_id', array('readonly' => true, 'onclick' => '$("#purchase-header-dialog").dialog("open"); return false;', 'onkeypress' => 'if (event.keyCode == 13) { $("#purchase-header-dialog").dialog("open"); return false; }')); ?>
+                <?php echo CHtml::openTag('span', array('id' => 'purchase_header_number')); ?>
+                <?php echo CHtml::encode(CHtml::value($purchaseInvoice->header, 'purchaseHeader.number')); ?>
+                <?php echo CHtml::closeTag('span'); ?>
+                <?php echo CHtml::error($purchaseInvoice->header, 'purchase_header_id'); ?>
+
+                <?php
+                $this->beginWidget('zii.widgets.jui.CJuiDialog', array(
+                    'id' => 'purchase-header-dialog',
+                    // additional javascript options for the dialog plugin
+                    'options' => array(
+                        'title' => 'Purchase',
+                        'autoOpen' => false,
+                        'width' => 'auto',
+                        'modal' => true,
+                    ),
+                ));
+                ?>
+                <?php
+                $this->widget('zii.widgets.grid.CGridView', array(
+                    'id' => 'purchase-header-grid',
+                    'dataProvider' => $purchaseHeader->searchByPurchaseInvoice(),
+                    'filter' => $purchaseHeader,
+                    'selectionChanged' => 'js:function(id) {
+                        $("#' . CHtml::activeId($purchaseInvoice->header, 'purchase_header_id') . '").val($.fn.yiiGridView.getSelection(id));
+                        $("#purchase-header-dialog").dialog("close");
+                        if ($.fn.yiiGridView.getSelection(id) == "")
+                        {
+                                $("#purchase_header_number").html("");
+                                $("#supplier_company").html("");
+                                $("#totalPurchase").html("");
+                        }
+                        else
+                        {
+                                $.ajax({
+                                        type: "POST",
+                                        dataType: "JSON",
+                                        url: "' . CController::createUrl('purchaseAjaxData', array('id' => $purchaseInvoice->header->id)) . '",
+                                        data: $("form").serialize(),
+                                        success: function(data) {
+                                                $("#purchase_header_number").html(data.purchase_header_number);
+                                                $("#supplier_company").html(data.supplier_company);
+                                                $("#totalPurchase").html(data.totalPurchase);
+                                        },
+                                });
+                        }
+                    }',
+                    'columns' => array(
+                        'number',
+                        array(
+                            'header' => 'Tanggal',
+                            'name' => 'date',
+                            'value' => 'Yii::app()->dateFormatter->format("d MMMM yyyy", $data->date)'
+                        ),
+                        array(
+                            'name' => 'supplier_id',
+                            'filter' => CHtml::listData(Supplier::model()->findAll(array('order' => 'company ASC')), 'id', 'company'),
+                            'value' => '$data->supplier->company',
+                        ),
+                        array(
+                            'header' => 'Grand Total',
+                            'value' => 'Yii::app()->numberFormatter->format("#,##0.00", $data->grandTotal)',
+                        ),
+                    ),
+                ));
+                ?>
+                <?php $this->endWidget('zii.widgets.jui.CJuiDialog'); ?>
+            </div>
+
+            <div class="row">
+                <?php echo CHtml::label('Total Pembelian', ''); ?>
+                <?php echo CHtml::openTag('span', array('id' => 'totalPurchase')); ?>
+                <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', CHtml::value($purchaseInvoice->header, 'totalPurchase'))); ?>
+                <?php echo CHtml::closeTag('span'); ?>
+            </div>
+
+            <div class="row">
+                <?php echo CHtml::activeLabelEx($purchaseInvoice->header, 'purchaseHeader.supplier_id'); ?>
+                <?php echo CHtml::openTag('span', array('id' => 'supplier_company')); ?>
+                <?php echo CHtml::encode(CHtml::value($purchaseInvoice->header, 'purchaseHeader.supplier.company')); ?>
+                <?php echo CHtml::closeTag('span'); ?>
+            </div>
+
+            <div class="row">
+                <?php echo CHtml::activeLabelEx($purchaseInvoice->header, 'Nomor Faktur Supplier'); ?>
+                <?php echo CHtml::activeTextField($purchaseInvoice->header, 'reference'); ?>
+                <?php echo CHtml::error($purchaseInvoice->header, 'reference'); ?>
+            </div>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="row buttons">
+        <?php echo CHtml::submitButton('Submit', array('name' => 'Submit', 'confirm' => 'Are you sure you want to save?')); ?>
+    </div>
+    <?php echo IdempotentManager::generate(); ?>
+
+<?php echo CHtml::endForm(); ?>
+
+</div><!-- form -->

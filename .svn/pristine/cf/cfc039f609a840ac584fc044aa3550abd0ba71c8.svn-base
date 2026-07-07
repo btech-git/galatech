@@ -1,0 +1,55 @@
+<?php
+$this->breadcrumbs=array(
+	'Transfer'=>array('/transaction/transfer/create'),
+	'View',
+);?>
+<h1><?php echo $this->id . '/' . $this->action->id; ?></h1>
+
+<?php $this->widget('zii.widgets.CDetailView', array(
+	'data'=>$transfer,
+	'attributes'=>array(
+		array(
+			'label'=>'Transfer #',
+			'value'=>$transfer->number,
+		),
+	   array(
+			'label'=>'Tanggal',
+			'value'=>Yii::app()->dateFormatter->format("d MMMM yyyy", $transfer->date),
+		),
+		array(
+			'label'=>'Gudang Asal',
+			'value'=>$transfer->warehouseIdFrom->name,
+		),
+		array(
+			'label'=>'Gudang Tujuan',
+			'value'=>$transfer->warehouseIdTo->name,
+		),
+		array(
+			'label'=>'Catatan',
+			'value'=>$transfer->note,
+		),
+	),
+)); ?>
+
+<?php $this->widget('zii.widgets.grid.CGridView', array(
+	'id'=>'transfer-detail-grid',
+	'dataProvider'=>new CArrayDataProvider($transfer->transferDetails),
+	'columns'=>array(
+		'product.name: Nama Barang',
+		'product.size: Ukuran',
+		array(
+			'header'=>'Jumlah',
+			'value'=>'number_format($data->quantity, 0)',
+			'htmlOptions'=>array(
+					'style'=>'text-align: right',
+			),
+		),
+		'product.unit.name: Satuan',
+	),
+)); ?>
+
+<?php if (Yii::app()->user->checkAccess('tTransferPrint')
+		|| Yii::app()->user->checkAccess('tsTransferPrint') 
+		|| Yii::app()->user->checkAccess('ntTransferPrint') ) :?>
+	<?php echo CHtml::link('Print Transfer', array('memo', 'id' => $transfer->id), array('target' => '_blank')); ?>
+<?php endif; ?>

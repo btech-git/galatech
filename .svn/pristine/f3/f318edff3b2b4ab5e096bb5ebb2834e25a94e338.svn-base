@@ -1,0 +1,426 @@
+<?php
+
+class PurchaseReturnController extends Controller
+{
+
+	public function filters()
+	{
+		return array(
+			'access',
+		);
+	}
+
+	public function filterAccess($filterChain)
+	{
+		$taxCreateValid = Yii::app()->user->checkAccess('tPurchaseReturnCreate') || Yii::app()->user->checkAccess('tsPurchaseReturnCreate');
+		$nonTaxCreateValid = Yii::app()->user->checkAccess('ntPurchaseReturnCreate');
+		$taxEditValid = Yii::app()->user->checkAccess('tPurchaseReturnEdit') || Yii::app()->user->checkAccess('tsPurchaseReturnEdit');
+		$nonTaxEditValid = Yii::app()->user->checkAccess('ntPurchaseReturnEdit');
+		
+		if ($filterChain->action->id === 'create')
+		{
+			$params = $filterChain->controller->actionParams;
+			
+			if (isset($params['id']))
+			{
+				if (!($taxEditValid || $nonTaxEditValid))
+					$this->redirect(array('/site/login'));
+			}
+			else
+			{
+				if (isset($params['nt']))
+				{
+					if (!$nonTaxCreateValid)
+						$this->redirect(array('/site/login'));
+				}
+				else
+				{
+					if (!$taxCreateValid)
+						$this->redirect(array('/site/login'));
+				}
+			}
+		}
+		if ($filterChain->action->id === 'create' || $filterChain->action->id === 'addProductAjax' || $filterChain->action->id === 'removeProductAjax' || $filterChain->action->id === 'returnAjaxData' || $filterChain->action->id === 'taxTotalAjaxData' || $filterChain->action->id === 'grandTotalAjaxData' || $filterChain->action->id === 'totalAjaxData' || $filterChain->action->id === 'memo' || $filterChain->action->id === 'view')
+		{
+			if (!($taxCreateValid || $nonTaxCreateValid || $taxEditValid || $nonTaxEditValid))
+				$this->redirect(array('/site/login'));
+		}
+		if ($filterChain->action->id === 'delete' || $filterChain->action->id === 'admin')
+		{
+			if (!($taxEditValid || $nonTaxEditValid))
+				$this->redirect(array('/site/login'));
+		}
+		if ($filterChain->action->id === 'report')
+		{
+			if (!(Yii::app()->user->checkAccess('ntPurchaseReturnReport') || Yii::app()->user->checkAccess('tPurchaseReturnReport') || Yii::app()->user->checkAccess('tsPurchaseReturnReport')))
+				$this->redirect(array('/site/login'));
+		}
+
+		$filterChain->run();
+	}
+
+	public function actionCreate()
+	{
+		$purchaseReturn = new PurchaseReturn();
+
+		if (isset($_GET['id']))
+			$purchaseReturn->copyFromDb($_GET['id']);
+
+		$product = new Product('search');
+		$product->unsetAttributes();
+		if (isset($_GET['Product']))
+			$product->attributes = $_GET['Product'];
+
+		if ($purchaseReturn->header->isNewRecord)
+		{
+			$purchaseReturn->header->is_non_tax = intval(isset($_GET['nt']));
+			$purchaseReturn->header->number = CodeNumber::make($purchaseReturn->header, 'number', ($purchaseReturn->header->is_non_tax) ? 'NPRET' : 'PRET', ($purchaseReturn->header->is_non_tax) ? true : false);
+		}
+
+		$purchaseReturn->header->admin_id = Yii::app()->user->id;
+		$this->loadState($purchaseReturn);
+
+		$purchaseInvoice = new PurchaseInvoice('search');
+		$purchaseInvoice->unsetAttributes();  // clear any default values
+		if (isset($_GET['PurchaseInvoice']))
+			$purchaseInvoice->attributes = $_GET['PurchaseInvoice'];
+
+		$error = false;
+
+		if (isset($_POST['Submit']))
+		{
+			$dbTransaction = CActiveRecord::$db->beginTransaction();
+			try
+			{
+				if ($purchaseReturn->validate() && $purchaseReturn->save(false))
+				{
+					$dbTransaction->commit();
+					Yii::app()->session['PurchaseReturnMemoAllowed'] = true;
+					$this->redirect(array('view', 'id' => $purchaseReturn->header->id));
+				}
+				else
+				{
+					$dbTransaction->rollback();
+					$error = true;
+				}
+			}
+			catch (Exception $e)
+			{
+				$dbTransaction->rollback();
+				throw new CHttpException($e->getCode(), $e->getMessage());
+			}
+		}
+
+		$this->render('create', array(
+			'purchaseReturn' => $purchaseReturn,
+			'purchaseInvoice' => $purchaseInvoice,
+			'product' => $product,
+			'error' => false,
+		));
+	}
+
+	public function actionView($id)
+	{
+		$purchaseReturn = PurchaseReturnHeader::model()->findByPk($id);
+
+		$this->render('view', array(
+			'purchaseReturn' => $purchaseReturn,
+		));
+	}
+
+	public function actionDelete($id)
+	{
+		if (Yii::app()->request->isPostRequest)
+		{
+			$purchaseReturn = PurchaseReturnHeader::model()->resetScope()->findByPk($id);
+			if ($purchaseReturn !== null)
+			{
+				$purchaseReturn->is_inactive = !$purchaseReturn->is_inactive;
+				$purchaseReturn->update(array('is_inactive'));
+                
+                foreach($purchaseReturn->purchaseReturnDetails as $detail)
+                {
+                    $detail->is_inactive = !$detail->is_inactive;
+                    $detail->update(array('is_inactive'));
+                }
+			}
+
+            Inventory::model()->DeleteAllByAttributes(array(
+                'transaction_number' => $purchaseReturn->number
+            ));
+		
+			if (!isset($_GET['ajax']))
+				$this->redirect(isset($_POST['returnUrl']) ? $_POST['returnUrl'] : array('admin'));
+		}
+		else
+			throw new CHttpException(400, 'Invalid request. Please do not repeat this request again.');
+	}
+
+	public function actionMemo($id)
+	{
+		if (!(Yii::app()->user->checkAccess('administrator')))
+		{
+			if (!(isset(Yii::app()->session['PurchaseReturnMemoAllowed']) && Yii::app()->session['PurchaseReturnMemoAllowed'] === true))
+				$this->redirect(array('admin'));
+		}
+		
+		Yii::app()->session->remove('PurchaseReturnMemoAllowed');
+		
+		$purchaseReturn = PurchaseReturnHeader::model()->findByPk($id);
+		
+		$purchaseReturnSupplier = ($purchaseReturn->is_non_tax) ? $purchaseReturn->purchaseInvoice->purchaseHeader->supplier->name : $purchaseReturn->purchaseInvoice->purchaseHeader->supplier->company;
+		$purchaseReturnHeaderText = ($purchaseReturn->is_non_tax) ? '' : 'PT. Galatech';
+		
+		$this->render('memo', array(
+			'purchaseReturn' => $purchaseReturn,
+			'purchaseReturnSupplier' => $purchaseReturnSupplier,
+			'purchaseReturnHeaderText' => $purchaseReturnHeaderText,
+		));
+	}
+
+	public function actionAdmin()
+	{
+		$purchaseReturn = new PurchaseReturnHeader('search');
+		$purchaseReturn->unsetAttributes();
+
+		if (isset($_GET['PurchaseReturnHeader']))
+			$purchaseReturn->attributes = $_GET['PurchaseReturnHeader'];
+
+		$supplierId = (isset($_GET['SupplierId'])) ? $_GET['SupplierId'] : '';
+		$warehouseId = (isset($_GET['WarehouseId'])) ? $_GET['WarehouseId'] : '';
+
+		$dataProvider = $purchaseReturn->search();
+		$dataProvider->criteria->with = array('purchaseInvoice.purchaseHeader');
+		$dataProvider->criteria->compare('purchaseHeader.supplier_id', $supplierId);
+		$dataProvider->criteria->compare('warehouse_id', $warehouseId);
+
+		$this->render('admin', array(
+			'purchaseReturn' => $purchaseReturn,
+			'dataProvider' => $dataProvider,
+			'supplierId' => $supplierId,
+			'warehouseId' => $warehouseId,
+		));
+	}
+
+	public function actionReport()
+	{
+		$purchaseReturnHeader = new PurchaseReturnHeader('search');
+		$purchaseReturnHeader->unsetAttributes();
+		if (isset($_GET['PurchaseReturnHeader']))
+			$purchaseReturnHeader->attributes = $_GET['PurchaseReturnHeader'];
+
+		$startDate = (isset($_GET['StartDate'])) ? $_GET['StartDate'] : '';
+		$endDate = (isset($_GET['EndDate'])) ? $_GET['EndDate'] : '';
+		$pageSize = (isset($_GET['PageSize'])) ? $_GET['PageSize'] : '';
+		$currentPage = (isset($_GET['page'])) ? $_GET['page'] : '';
+		$currentSort = (isset($_GET['sort'])) ? $_GET['sort'] : '';
+
+		$supplierId = (isset($_GET['SupplierId'])) ? $_GET['SupplierId'] : '';
+
+		$dataProvider = $purchaseReturnHeader->search();
+		$dataProvider->criteria->compare('purchaseHeader.supplier_id', $supplierId);
+		$dataProvider->criteria->join = "INNER JOIN " . PurchaseInvoice::model()->tableName() . " purchaseInvoice ON purchaseInvoice.id = t.purchase_invoice_id INNER JOIN " . PurchaseHeader::model()->tableName() . " purchaseHeader ON purchaseHeader.id = purchaseInvoice.purchase_header_id INNER JOIN " . Supplier::model()->tableName() . " supplier ON purchaseHeader.supplier_id = supplier.id";
+
+		$page = array('size' => $pageSize, 'current' => $currentPage);
+		$date = array('attribute' => 't.date', 'start' => $startDate, 'end' => $endDate);
+
+		$sort = new CSort(get_class($purchaseReturnHeader));
+		$sort->attributes = array('t.date', 'supplier.name');
+
+		$dataProvider = ReportHelper::finalizeDataProvider($dataProvider, $page, $sort, $date);
+
+		$this->render('report', array(
+			'purchaseReturnHeader' => $purchaseReturnHeader,
+			'dataProvider' => $dataProvider,
+			'startDate' => $startDate,
+			'endDate' => $endDate,
+			'sort' => $sort,
+			'currentSort' => $currentSort,
+			'supplierId' => $supplierId,
+		));
+	}
+
+	public function actionAddProductAjax($id, $nt)
+	{
+		if (Yii::app()->request->isAjaxRequest)
+		{
+			$purchaseReturn = new PurchaseReturn();
+
+			if (!empty($id))
+				$purchaseReturn->copyFromDb($id);
+			
+			if ($purchaseReturn->header->isNewRecord)
+				$purchaseReturn->header->is_non_tax = intval($nt);
+
+			if (!isset($_POST['PurchaseReturnDetail']))
+				$purchaseReturn->details = array();
+
+			$this->loadState($purchaseReturn);
+
+			if (isset($_POST['PurchaseReturnHeader']['purchase_invoice_id']))
+				$purchaseReturn->addProductByPurchase($_POST['PurchaseReturnHeader']['purchase_invoice_id']);
+
+			$this->renderPartial('_detail', array(
+				'purchaseReturn' => $purchaseReturn,
+				'error' => false,
+			));
+		}
+	}
+	
+	
+
+	public function actionRemoveProductAjax($id, $index)
+	{
+		if (Yii::app()->request->isAjaxRequest)
+		{
+			$purchaseReturn = new PurchaseReturn();
+
+			if (!empty($id))
+				$purchaseReturn->copyFromDb($id);
+
+			if (!isset($_POST['PurchaseReturnDetail']))
+				$purchaseReturn->details = array();
+
+			$this->loadState($purchaseReturn);
+
+			$purchaseReturn->removeProductAt($index);
+
+			$this->renderPartial('_detail', array(
+				'purchaseReturn' => $purchaseReturn,
+				'error' => false,
+			));
+		}
+	}
+
+	public function actionReturnAjaxData($id)
+	{
+		if (Yii::app()->request->isAjaxRequest)
+		{
+			$purchaseReturn = new PurchaseReturn();
+
+			if (!empty($id))
+				$purchaseReturn->copyFromDb($id);
+
+			if (!isset($_POST['PurchaseReturnDetail']))
+				$purchaseReturn->details = array();
+
+			$this->loadState($purchaseReturn);
+
+			$object = array(
+				'purchase_invoice_number' => $purchaseReturn->header->purchaseInvoice->number,
+				'supplier_company' => $purchaseReturn->header->purchaseInvoice->purchaseHeader->supplier->company,
+			);
+			echo CJSON::encode($object);
+		}
+	}
+
+	public function actionTotalAjaxData($id, $index)
+	{
+		if (Yii::app()->request->isAjaxRequest)
+		{
+			$purchaseReturn = new PurchaseReturn();
+
+			if (!empty($id))
+				$purchaseReturn->copyFromDb($id);
+
+			if (!isset($_POST['PurchaseReturnDetail']))
+				$purchaseReturn->details = array();
+
+			$this->loadState($purchaseReturn);
+
+			$total = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', CHtml::value($purchaseReturn->details[$index], 'total')));
+			$subTotal = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $purchaseReturn->subTotal));
+                        $subTotalQuantity = CHtml::encode(Yii::app()->numberFormatter->format('#,##0', $purchaseReturn->subTotalQuantity));
+			$tax = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $purchaseReturn->calculatedTax));
+			$grandTotal = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $purchaseReturn->grandTotal));
+
+			echo CJSON::encode(array(
+				'total' => $total,
+				'tax' => $tax,
+				'subTotal'=> $subTotal,
+				'grandTotal' => $grandTotal,
+                                'subTotalQuantity' => $subTotalQuantity
+			));
+		}
+	}
+	
+	public function actionTaxTotalAjaxData($id)
+	{
+		if (Yii::app()->request->isAjaxRequest)
+		{
+			$purchaseReturn = new PurchaseReturn();
+
+			if (!empty($id))
+				$delivery->copyFromDb($id);
+
+			if (!isset($_POST['PurchaseReturnDetail']))
+				$purchaseReturn->details = array();
+
+			$this->loadState($purchaseReturn);
+
+			$tax = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $purchaseReturn->calculatedTax));
+			$grandTotal = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $purchaseReturn->grandTotal));
+
+			echo CJSON::encode(array(
+				'tax' => $tax,
+				'grandTotal' => $grandTotal,
+			));
+		}
+	}
+	
+	public function actionGrandTotalAjaxData($id)
+	{
+		if (Yii::app()->request->isAjaxRequest)
+		{
+			$purchaseReturn = new PurchaseReturn();
+
+			if (!empty($id))
+				$purchaseReturn->copyFromDb($id);
+
+			if (!isset($_POST['PurchaseReturnDetail']))
+				$purchaseReturn->details = array();
+
+			$this->loadState($purchaseReturn);
+
+			$grandTotal = CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $purchaseReturn->grandTotal));
+
+			echo CJSON::encode(array(
+				'grandTotal' => $grandTotal,
+			));
+		}
+	}
+
+	protected function reportGrandTotal($dataProvider)
+	{
+		$grandTotal = 0.00;
+
+		foreach ($dataProvider->data as $data)
+			$grandTotal += $data->grandTotal;
+
+		return $grandTotal;
+	}
+
+	protected function loadState(&$purchaseReturn)
+	{
+		if (isset($_POST['PurchaseReturnHeader']))
+		{
+			$purchaseReturn->header->attributes = $_POST['PurchaseReturnHeader'];
+		}
+		if (isset($_POST['PurchaseReturnDetail']))
+		{
+			foreach ($_POST['PurchaseReturnDetail'] as $i => $item)
+			{
+				if (isset($purchaseReturn->details[$i]))
+					$purchaseReturn->details[$i]->attributes = $item;
+				else
+				{
+					$detail = new PurchaseReturnDetail();
+					$detail->attributes = $item;
+					$purchaseReturn->details[] = $detail;
+				}
+			}
+			if (count($_POST['PurchaseReturnDetail']) < count($purchaseReturn->details))
+				array_splice($purchaseReturn->details, $i + 1);
+		}
+	}
+}

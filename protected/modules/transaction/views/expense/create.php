@@ -1,0 +1,92 @@
+<h1><?php echo $expenseHeaderText; ?></h1>
+
+<div class="form">
+
+    <?php echo CHtml::beginForm(); ?>
+
+    <div class="container">
+        <div class="span-12">
+            <?php if (!empty($expense->header->id)): ?>
+                <div class="row">
+                    <?php echo CHtml::label('Pengeluaran #', ''); ?>
+                    <?php echo CHtml::encode(CHtml::value($expense->header, 'number')); ?>
+                    <?php echo CHtml::error($expense->header, 'number'); ?>
+                </div>
+            <?php endif; ?>
+
+            <div class="row">
+                <?php echo CHtml::label('Tanggal', ''); ?>
+                <?php
+                $this->widget('zii.widgets.jui.CJuiDatePicker', array(
+                    'model' => $expense->header,
+                    'attribute' => 'date',
+                    // additional javascript options for the date picker plugin
+                    'options' => array(
+                        'dateFormat' => 'yy-mm-dd',
+                    ),
+                    'htmlOptions' => array(
+                        'readonly' => true,
+                    ),
+                ));
+                ?>
+                <?php echo CHtml::error($expense->header, 'date'); ?>
+            </div>
+
+            <div class="row">
+                <?php echo CHtml::activeLabelEx($expense->header, 'account_id'); ?>
+                <?php if (TaxConnectionChecking::isCurrentConnectionSecondary()): ?>
+                    <?php echo CHtml::activeDropDownList($expense->header, 'account_id', CHtml::listData(Account::model()->findAll($expenseAccountCategorySecondary), 'id', 'name')); ?>
+                <?php else: ?>
+                    <?php echo CHtml::activeDropDownList($expense->header, 'account_id', CHtml::listData(Account::model()->findAll('account_category_id IN (1, 2, 30, 31, 32)'), 'id', 'name')); ?>
+                <?php endif; ?>
+                <?php echo CHtml::error($expense->header, 'account_id'); ?>
+            </div>
+        </div>
+
+        <div class="span-12 last">
+            <div class="row">
+                <?php echo CHtml::label('Catatan', ''); ?>
+                <?php echo CHtml::activeTextArea($expense->header, 'note', array('rows' => 5, 'cols' => 30)); ?>
+                <?php echo CHtml::error($expense->header, 'note'); ?>
+            </div>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="row">
+        Cari Nama Akun :
+        <?php
+        $this->widget('zii.widgets.jui.CJuiAutoComplete', array(
+            'name' => 'Account',
+            'sourceUrl' => CController::createUrl('accountCompletion'),
+            // additional javascript options for the autocomplete plugin
+            'options' => array(
+                'minLength' => '2',
+                'select' => 'js:function(event, ui) {
+                        $(this).val(ui.item.value);
+                        ui.item.value = "";
+                        $.ajax({
+                                type: "POST",
+                                url: "' . CController::createUrl('addAccountAjax', array('id' => $expense->header->id)) . '",
+                                data: $(this).parents("form").serialize(),
+                                success: function(html) { $("#detail_div").html(html); },
+                        });
+                }',
+            ),
+        ));
+        ?>
+    </div>
+
+    <div id="detail_div">
+        <?php $this->renderPartial('_detail', array('expense' => $expense, 'error' => $error)); ?>
+    </div>
+
+    <div class="row buttons">
+        <?php echo CHtml::submitButton('Submit', array('name' => 'Submit', 'confirm' => 'Are you sure you want to save?')); ?>
+    </div>
+    <?php echo IdempotentManager::generate(); ?>
+
+<?php echo CHtml::endForm(); ?>
+
+</div><!-- form -->

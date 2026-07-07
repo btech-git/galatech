@@ -1,0 +1,174 @@
+<?php
+
+/**
+ * This is the model class for table "tblgt_purchase_invoice".
+ *
+ * The followings are the available columns in table 'tblgt_purchase_invoice':
+ * @property integer $id
+ * @property string $number
+ * @property string $date
+ * @property string $reference
+ * @property string $note
+ * @property integer $purchase_header_id
+ * @property integer $admin_id
+ * @property integer $is_non_tax
+ * @property integer $is_inactive
+ *
+ * The followings are the available model relations:
+ * @property PurchaseHeader $purchaseHeader
+ * @property Admin $admin
+ * @property PurchaseReceiptDetail[] $purchaseReceiptDetails
+ * @property PurchaseReturnHeader[] $purchaseReturnHeaders
+ */
+class PurchaseInvoice extends ActiveRecord
+{
+	/**
+	 * Returns the static model of the specified AR class.
+	 * @return PurchaseInvoice the static model class
+	 */
+	public static function model($className=__CLASS__)
+	{
+		return parent::model($className);
+	}
+
+	/**
+	 * @return string the associated database table name
+	 */
+	public function tableName()
+	{
+		return 'tblgt_purchase_invoice';
+	}
+
+	/**
+	 * @return array validation rules for model attributes.
+	 */
+	public function rules()
+	{
+		// NOTE: you should only define rules for those attributes that
+		// will receive user inputs.
+		return array(
+			array('number, date, purchase_header_id, admin_id', 'required'),
+			array('purchase_header_id, admin_id, is_non_tax, is_inactive', 'numerical', 'integerOnly'=>true),
+			array('number, reference', 'length', 'max'=>60),
+			array('note', 'safe'),
+			// The following rule is used by search().
+			// Please remove those attributes that should not be searched.
+			array('id, number, date, reference, note, purchase_header_id, admin_id, is_non_tax, is_inactive', 'safe', 'on'=>'search'),
+		);
+	}
+
+	/**
+	 * @return array relational rules.
+	 */
+	public function relations()
+	{
+		// NOTE: you may need to adjust the relation name and the related
+		// class name for the relations automatically generated below.
+		return array(
+			'purchaseHeader' => array(self::BELONGS_TO, 'PurchaseHeader', 'purchase_header_id'),
+			'admin' => array(self::BELONGS_TO, 'Admin', 'admin_id'),
+			'purchaseReceiptDetails' => array(self::HAS_MANY, 'PurchaseReceiptDetail', 'purchase_invoice_id'),
+			'purchaseReturnHeaders' => array(self::HAS_MANY, 'PurchaseReturnHeader', 'purchase_invoice_id'),
+		);
+	}
+
+	/**
+	 * @return array customized attribute labels (name=>label)
+	 */
+	public function attributeLabels()
+	{
+		return array(
+			'id' => 'ID',
+			'number' => 'Number',
+			'date' => 'Date',
+			'reference' => 'Reference',
+			'note' => 'Note',
+			'purchase_header_id' => 'Purchase Header',
+			'admin_id' => 'Admin',
+			'is_non_tax' => 'Is Non Tax',
+			'is_inactive' => 'Is Inactive',
+		);
+	}
+
+	/**
+	 * Retrieves a list of models based on the current search/filter conditions.
+	 * @return CActiveDataProvider the data provider that can return the models based on the search/filter conditions.
+	 */
+	public function search()
+	{
+		// Warning: Please modify the following code to remove attributes that
+		// should not be searched.
+
+		$criteria=new CDbCriteria;
+
+		$criteria->compare('id',$this->id);
+		$criteria->compare('t.number',$this->number,true);
+		$criteria->compare('t.date',$this->date,true);
+		$criteria->compare('reference',$this->reference,true);
+		$criteria->compare('note',$this->note,true);
+		$criteria->compare('purchase_header_id',$this->purchase_header_id);
+		$criteria->compare('admin_id',$this->admin_id);
+		$criteria->compare('is_non_tax',$this->is_non_tax);
+		$criteria->compare('t.is_inactive',$this->is_inactive);
+
+		return new CActiveDataProvider($this, array(
+			'criteria'=>$criteria,
+		));
+	}
+	
+	public function searchByPurchaseReturn()
+	{
+		$criteria = new CDbCriteria;
+
+		$criteria->condition = 'EXISTS (
+                        
+			SELECT purchase.quantity - SUM(COALESCE(returned.quantity, 0)) AS quantity_purchased
+			FROM 
+			(
+				SELECT h.id, d.quantity, d.product_id
+				FROM tblgt_purchase_header h 
+				INNER JOIN tblgt_purchase_detail d ON h.id = d.purchase_header_id
+				WHERE h.is_inactive = 0 AND d.is_inactive = 0
+			) purchase
+			LEFT OUTER JOIN
+			(
+				SELECT h.purchase_invoice_id, d.quantity, d.product_id
+				FROM tblgt_purchase_return_header h
+				INNER JOIN tblgt_purchase_return_detail d ON h.id = d.purchase_return_header_id
+				WHERE h.is_inactive = 0 AND d.is_inactive = 0
+			) returned
+			ON purchase.id = returned.purchase_invoice_id
+			AND purchase.product_id = returned.product_id
+			WHERE t.id = purchase.id
+			GROUP BY purchase.id, purchase.product_id
+			HAVING quantity_purchased > 0
+			)';
+
+		$criteria->compare('number', $this->number, true);
+		$criteria->compare('date', $this->date, true);
+
+		return new CActiveDataProvider(get_class($this), array(
+				'criteria' => $criteria,
+			));
+	}
+
+	public function getTotalPurchase()
+	{
+		return ($this->purchaseHeader === null) ? 0.00 : $this->purchaseHeader->totalPayment;
+	}
+	
+	public function searchByPurchaseReceipt()
+	{
+		$criteria = new CDbCriteria;
+
+		$criteria->condition = "t.id NOT IN (SELECT purchase_invoice_id FROM tblgt_purchase_receipt_detail WHERE is_inactive = 0)";
+
+		$criteria->compare('number', $this->number, true);
+		$criteria->compare('date', $this->date, true);
+		$criteria->compare('purchase_header_id',$this->purchase_header_id);
+
+		return new CActiveDataProvider(get_class($this), array(
+			'criteria' => $criteria,
+		));
+	}
+}

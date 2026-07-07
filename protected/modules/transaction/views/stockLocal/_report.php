@@ -1,0 +1,53 @@
+<?php
+Yii::app()->clientScript->registerCss('_report', '
+    .width1-1 { width: 20% }
+    .width1-2 { width: 30% }
+    .width1-3 { width: 10% }
+    .width1-4 { width: 10% }
+    .width1-5 { width: 15% }
+    .width1-6 { width: 15% }
+');
+?>
+
+<div style="font-weight: bold; text-align: center">
+    <div style="font-size: larger">GALATECH JAYA ABADI</div>
+    <div style="font-size: larger">Laporan Stok Barang</div>
+</div>
+
+<br />
+
+<table class="report">
+    <tr id="header1">
+        <th class="width1-1">Kategori</th>
+        <th class="width1-2">Nama Produk</th>
+        <th class="width1-3">Ukuran</th>
+        <th class="width1-4">Stok</th>
+        <th class="width1-5">HPP</th>
+        <th class="width1-6">Nilai Stok</th>
+    </tr>
+    <tr id="header2">
+        <td colspan="6"></td>
+    </tr>
+    <?php foreach ($dataProvider->data as $header): ?>
+        <?php $stockQuantity = $header->getLocalStock($warehouseId); ?>
+        <?php $costOfGoodsSold = $header->costOfGoodsSold; ?>
+        <?php $totalStockValue = $stockQuantity * $costOfGoodsSold; ?>
+        <tr class="items1">
+            <td class="width1-1"><?php echo CHtml::encode(CHtml::value($header, 'category.name')); ?></td>
+            <td class="width1-2"><?php echo CHtml::encode(CHtml::value($header, 'name')); ?></td>
+            <td class="width1-3" style="text-align: center"><?php echo CHtml::encode(CHtml::value($header, 'size')); ?></td>
+            <td class="width1-4" style="text-align: center">
+                <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', $stockQuantity)); ?>
+            </td>
+            <td class="width1-5" style="text-align: right">
+                <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $costOfGoodsSold)); ?>
+            </td>
+            <td class="width1-6" style="text-align: right">
+                <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $totalStockValue)); ?>
+            </td>
+        </tr>
+        <tr class="items2">
+            <td colspan="6"></td>
+        </tr>
+    <?php endforeach; ?>
+</table>

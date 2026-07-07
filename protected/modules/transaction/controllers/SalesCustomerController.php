@@ -1,0 +1,69 @@
+<?php
+
+class SalesCustomerController extends Controller
+{
+
+	public function filters()
+	{
+		return array(
+			'access',
+		);
+	}
+
+	public function filterAccess($filterChain)
+	{
+		if ($filterChain->action->id === 'report')
+		{
+			if (!(Yii::app()->user->checkAccess('ntInvoiceReport') || Yii::app()->user->checkAccess('tInvoiceReport') || Yii::app()->user->checkAccess('tsInvoiceReport')))
+				$this->redirect(array('/site/login'));
+		}
+
+		$filterChain->run();
+	}
+
+	public function actionReport()
+	{
+		$customer = new Customer('search');
+		$customer->unsetAttributes();
+		if (isset($_GET['Customer']))
+			$customer->attributes = $_GET['Customer'];
+
+		$startDate = (isset($_GET['StartDate'])) ? $_GET['StartDate'] : date('Y-m-d');
+		$endDate = (isset($_GET['EndDate'])) ? $_GET['EndDate'] : date('Y-m-d');
+		$pageSize = (isset($_GET['PageSize'])) ? $_GET['PageSize'] : '';
+		$currentPage = (isset($_GET['page'])) ? $_GET['page'] : '';
+		$currentSort = (isset($_GET['sort'])) ? $_GET['sort'] : '';
+
+		$dataProvider = $customer->search();
+		$dataProvider->criteria->with = array('deliveryHeaders' => array(
+			'condition' => "deliveryHeaders.date BETWEEN :startDate AND :endDate", 
+			'params' => array(':startDate' => $startDate, ':endDate' => $endDate),
+		));
+
+		$page = array('size' => $pageSize, 'current' => $currentPage);
+
+		$sort = new CSort(get_class($customer));
+		$sort->attributes = array('t.name');
+
+		$dataProvider = ReportHelper::finalizeDataProvider($dataProvider, $page, $sort);
+
+		$this->render('report', array(
+			'customer' => $customer,
+			'dataProvider' => $dataProvider,
+			'startDate' => $startDate,
+			'endDate' => $endDate,
+			'sort' => $sort,
+			'currentSort' => $currentSort,
+		));
+	}
+	
+	protected function reportGrandTotal($dataProvider)
+	{
+		$grandTotal = 0.00;
+
+		foreach ($dataProvider->data as $data)
+			$grandTotal += $data->totalSales;
+
+		return $grandTotal;
+	}
+}

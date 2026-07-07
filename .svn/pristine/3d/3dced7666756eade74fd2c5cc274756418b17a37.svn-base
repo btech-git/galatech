@@ -1,0 +1,196 @@
+<?php
+$this->breadcrumbs = array(
+    'receipt' => array('admin'),
+    'Create',
+);
+?>
+
+<h1>Tanda Terima Penjualan</h1>
+
+<div class="form">
+
+    <?php echo CHtml::beginForm(); ?>
+    <div class="container">
+        <div class="span-12">
+<!--            <div class="row">
+                <?php /*echo CHtml::label('Tanda Terima Penjualan #', false); ?>
+                <?php echo CHtml::encode(CHtml::value($receipt->header, 'number')); ?>
+                <?php echo CHtml::error($receipt->header, 'number');*/ ?>
+            </div>-->
+
+            <div class="row">
+                <?php echo CHtml::label('Catatan', false); ?>
+                <?php echo CHtml::activeTextArea($receipt->header, 'note', array('rows' => 5, 'cols' => 30)); ?>
+                <?php echo CHtml::error($receipt->header, 'note'); ?>
+            </div>
+        </div>
+        <div class="span-12 last">
+            <div class="row">
+                <?php echo CHtml::label('Date', false); ?>
+                <?php $this->widget('zii.widgets.jui.CJuiDatePicker', array(
+                    'model' => $receipt->header,
+                    'attribute' => 'date',
+                    // additional javascript options for the date picker plugin
+                    'options' => array(
+                        'dateFormat' => 'yy-mm-dd',
+                    ),
+                    'htmlOptions' => array(
+                        'readonly' => true,
+                    ),
+                )); ?>
+                <?php echo CHtml::error($receipt->header, 'date'); ?>
+            </div>
+
+            <div class="row">
+                <?php echo CHtml::label('Customer', ''); ?>
+                <?php echo CHtml::activeTextField($receipt->header, 'customer_id', array('readonly' => true, 'onclick' => '$("#customer-dialog").dialog("open"); return false;', 'onkeypress' => 'if (event.keyCode == 13) { $("#customer-dialog").dialog("open"); return false; }')); ?>
+                <?php echo CHtml::openTag('span', array('id' => 'customer_id')); ?>
+                <?php echo CHtml::encode(CHtml::value($receipt->header, 'customer.name')); ?>
+                <?php echo CHtml::closeTag('span'); ?>
+                <?php echo CHtml::error($receipt->header, 'customer_id'); ?>
+
+                <?php $this->beginWidget('zii.widgets.jui.CJuiDialog', array(
+                    'id' => 'customer-dialog',
+                    // additional javascript options for the dialog plugin
+                    'options' => array(
+                        'title' => 'Customer',
+                        'autoOpen' => false,
+                        'width' => 'auto',
+                        'modal' => true,
+                    ),
+                ));
+                ?>
+                <?php
+                $this->widget('zii.widgets.grid.CGridView', array(
+                    'id' => 'customer-grid',
+                    'dataProvider' => $customer->search(),
+                    'filter' => $customer,
+                    'selectionChanged' => 'js:function(id) {
+                        $("#' . CHtml::activeId($receipt->header, 'customer_id') . '").val($.fn.yiiGridView.getSelection(id));
+                        $("#customer-dialog").dialog("close");
+                        if ($.fn.yiiGridView.getSelection(id) == "") {
+                                $("#customer_id").html("");
+                                $("#customer_name").html("");
+                                $("#customer_address").html("");
+
+                        } else {
+                            $.ajax({
+                                type: "POST",
+                                dataType: "JSON",
+                                url: "' . CController::createUrl('customerAjaxData', array('id' => $receipt->header->id)) . '",
+                                data: $("form").serialize(),
+                                success: function(data) {
+                                    $("#customer_id").html(data.customer_id);
+                                    $("#customer_name").html(data.customer_name);
+                                    $("#customer_address").html(data.customer_address);
+s				},
+                            });
+                        }
+                        $.ajax({
+                            type: "POST",
+                            url: "' . CController::createUrl('ajaxHtmlResetDetail', array('id' => $receipt->header->id)) . '",
+                            data: $("form").serialize(),
+                            success: function(html) { $("#detail_div").html(html); },
+                        });
+                        
+                        $.fn.yiiGridView.update("invoice-header-grid", {
+                            data: $("form").serialize()
+                        });
+                    }',
+                    'columns' => array(
+                        'name',
+                        'company',
+                        'address',
+                    ),
+                )); ?>
+                <?php $this->endWidget('zii.widgets.jui.CJuiDialog'); ?>
+            </div>
+
+            <div class="row">
+                <?php echo CHtml::label('Nama Pelanggan', ''); ?>
+                <?php echo CHtml::openTag('span', array('id' => 'customer_name')); ?>
+                <?php echo CHtml::encode(CHtml::value($receipt->header, 'customer.name')); ?>
+                <?php echo CHtml::closeTag('span'); ?>
+            </div>
+
+            <div class="row">
+                <?php echo CHtml::label('Alamat Pelanggan', ''); ?>
+                <?php echo CHtml::openTag('span', array('id' => 'customer_address')); ?>
+                <?php echo CHtml::encode(CHtml::value($receipt->header, 'customer.address')); ?>
+                <?php echo CHtml::closeTag('span'); ?>
+            </div>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="row">
+        <?php echo CHtml::button('Add Invoice Header', array('name' => 'Search', 'onclick' => '$("#invoice-header-dialog").dialog("open"); return false;', 'onkeypress' => 'if (event.keyCode == 13) { $("#invoice-header-dialog").dialog("open"); return false; }')); ?>
+        <?php echo CHtml::hiddenField('invoiceHeaderId'); ?>
+    </div>
+
+    <div id="detail_div">
+        <?php $this->renderPartial('_detail', array('receipt' => $receipt, 'error' => $error)); ?>
+    </div>
+
+    <div class="row buttons">
+        <?php echo CHtml::submitButton('Submit', array('name' => 'Submit', 'confirm' => 'Are you sure you want to save?')); ?>
+    </div>
+    <?php echo IdempotentManager::generate(); ?>
+
+    <?php echo CHtml::endForm(); ?>
+
+</div><!-- form -->
+
+<div>
+    <?php $this->beginWidget('zii.widgets.jui.CJuiDialog', array(
+        'id' => 'invoice-header-dialog',
+        // additional javascript options for the dialog plugin
+        'options' => array(
+            'title' => 'Invoice Header',
+            'autoOpen' => false,
+            'width' => 'auto',
+            'modal' => true,
+        ),
+    )); ?>
+
+    <?php $this->widget('zii.widgets.grid.CGridView', array(
+        'id' => 'invoice-header-grid',
+        'dataProvider' => $invoiceHeaderDataProvider,
+        'filter' => $invoiceHeader,
+        'selectionChanged' => 'js:function(id) {
+            $("#invoiceHeaderId").val($.fn.yiiGridView.getSelection(id));
+            $("#invoice-header-dialog").dialog("close");
+            $.ajax({
+                type: "POST",
+                url: "' . CController::createUrl('ajaxHtmlAddInvoice', array('id' => $receipt->header->id)) . '",
+                data: $("form").serialize(),
+                success: function(html) { $("#detail_div").html(html); },
+            });
+        }',
+        'columns' => array(
+            'number: Invoice #',
+            array(
+                'header' => 'Tanggal',
+                'name' => 'date',
+                'value' => 'Yii::app()->dateFormatter->format("d MMMM yyyy", $data->date)'
+            ),
+            array(
+                'name' => 'deliveryHeader.customer_id',
+                'header' => 'Pelanggan',
+                'filter' => CHtml::listData(Customer::model()->findAll(), 'id', 'company'),
+                'value' => 'CHtml::value($data, "deliveryHeader.customer.company")',
+            ),
+            array(
+                'header' => 'Total Invoice',
+                'filter' => false,
+                'value' => 'number_format(CHtml::value($data, "totalInvoice"), 2)',
+                'htmlOptions' => array(
+                    'style' => 'text-align: right',
+                ),
+            ),
+        ),
+    )); ?>
+
+<?php $this->endWidget('zii.widgets.jui.CJuiDialog'); ?>
+</div>

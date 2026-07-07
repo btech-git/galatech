@@ -1,0 +1,35 @@
+<h1>Kelola Data Pengiriman Barang</h1>
+
+<?php $this->widget('zii.widgets.grid.CGridView', array(
+	'id'=>'delivery-grid',
+	'dataProvider'=>$delivery->search(),
+	'filter'=>$delivery,
+	'columns'=>array(
+		'number',
+		array(
+			'header' => 'Tanggal',
+			'name' => 'date',
+			'value' => 'Yii::app()->dateFormatter->format("d MMMM yyyy", $data->date)'
+		),
+		array(
+			'name' => 'warehouse_id',
+			'filter' => CHtml::listData(Warehouse::model()->findAll(), 'id', 'name'),
+			'value' => '$data->warehouse->name',
+		),
+		array(
+			'name' => 'customer_id',
+			'filter' => CHtml::listData(Customer::model()->findAll(array('order' => 'company ASC')), 'id', 'name'),
+			'value' => '$data->customer->name',
+		),
+		array(
+			'header' => 'Pembuat',
+			'name' => 'admin_id',
+			'filter' => CHtml::listData(Admin::model()->findAll(array('order' => 'username ASC')), 'id', 'name'),
+			'value' => 'CHtml::encode(CHtml::value($data, "admin.username"))',
+		),
+		array(
+			'class'=>'CButtonColumn',
+			'updateButtonUrl'=>'CHtml::normalizeUrl(array("create", "id"=>$data->id))',
+		),
+	),
+)); ?>

@@ -1,0 +1,84 @@
+<?php
+
+class PurchaseInvoiceTransaction extends CComponent {
+
+    public $header;
+
+    public function __construct() {
+        $this->header = new PurchaseInvoice();
+    }
+
+    public function copyFromDb($id) {
+        $this->header = PurchaseInvoice::model()->resetScope()->findByPk($id);
+    }
+
+    public function validate() {
+        $valid = $this->header->validate();
+
+        return $valid;
+    }
+
+    public function save($runValidation) {
+        $valid = $this->header->save($runValidation);
+
+        if (TaxConnectionChecking::isCurrentConnectionPrimary() || (TaxConnectionChecking::isCurrentConnectionSecondary() && TaxConnectionChecking::nonTaxValid())) {
+            $accountingJournalDebit = AccountingJournalHelper::make(
+                'debit',
+                $this->header->number,
+                $this->header->date,
+                32,
+                $this->header->purchaseHeader->subTotal - $this->header->purchaseHeader->calculatedDiscount
+            );
+            $valid = $accountingJournalDebit->save() && $valid;
+
+            $accountingJournalCredit = AccountingJournalHelper::make(
+                'credit',
+                $this->header->number,
+                $this->header->date,
+                $this->header->purchaseHeader->supplier->account_id,
+                $this->header->purchaseHeader->grandTotal
+            );
+            $valid = $accountingJournalCredit->save() && $valid;
+
+            if ($this->header->purchaseHeader->calculatedTax > 0) {
+                $accountingJournalDebit = AccountingJournalHelper::make(
+                    'debit',
+                    $this->header->number,
+                    $this->header->date,
+                    172,
+                    $this->header->purchaseHeader->calculatedTax
+                );
+                $valid = $accountingJournalDebit->save() && $valid;
+            }
+
+            if ($this->header->purchaseHeader->shipping_fee > 0) {
+                $accountingJournalDebit = AccountingJournalHelper::make(
+                    'debit',
+                    $this->header->number,
+                    $this->header->date,
+                    175,
+                    $this->header->purchaseHeader->shipping_fee
+                );
+                $valid = $accountingJournalDebit->save() && $valid;
+            }
+
+            foreach ($this->header->purchaseHeader->purchaseDetails as $detail) {
+
+                $product = $detail->product;
+                $stock = $product->getCurrentStock();
+
+                if ($stock == 0) {
+                    $weightCogs = $detail->priceAfterDiscount;
+                } else {
+                    $weightCogs = ($detail->total + ($stock * $product->weighted_purchase_price)) / ($detail->quantity + $stock);
+                }
+
+                $product->weighted_purchase_price = ceil($weightCogs);
+
+                $valid = $valid && $product->save(true, array('weighted_purchase_price'));
+            }
+        }
+
+        return $valid;
+    }
+}

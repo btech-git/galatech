@@ -1,0 +1,157 @@
+<?php
+
+class InvoiceSummaryController extends Controller {
+
+    public function filters() {
+        return array(
+            'access',
+        );
+    }
+
+    public function filterAccess($filterChain) {
+        $taxCreateValid = Yii::app()->user->checkAccess('tInvoiceCreate') || Yii::app()->user->checkAccess('tsInvoiceCreate');
+        $nonTaxCreateValid = Yii::app()->user->checkAccess('ntInvoiceCreate');
+        $taxEditValid = Yii::app()->user->checkAccess('tInvoiceEdit') || Yii::app()->user->checkAccess('tsInvoiceEdit');
+        $nonTaxEditValid = Yii::app()->user->checkAccess('ntInvoiceEdit');
+
+        if ($filterChain->action->id === 'report') {
+            if (!(Yii::app()->user->checkAccess('ntInvoiceReport') || Yii::app()->user->checkAccess('tInvoiceReport') || Yii::app()->user->checkAccess('tsInvoiceReport')))
+                $this->redirect(array('/site/login'));
+        }
+
+        $filterChain->run();
+    }
+
+    public function actionReport() {
+        set_time_limit(0);
+        ini_set('memory_limit', '1024M');
+
+        $invoiceHeader = new InvoiceHeader('search');
+        $invoiceHeader->unsetAttributes();
+
+        if (isset($_GET['InvoiceHeader']))
+            $invoiceHeader->attributes = $_GET['InvoiceHeader'];
+
+        $startDate = (isset($_GET['StartDate'])) ? $_GET['StartDate'] : '';
+        $endDate = (isset($_GET['EndDate'])) ? $_GET['EndDate'] : '';
+        $pageSize = (isset($_GET['PageSize'])) ? $_GET['PageSize'] : '';
+        $currentPage = (isset($_GET['page'])) ? $_GET['page'] : '';
+        $currentSort = (isset($_GET['sort'])) ? $_GET['sort'] : '';
+
+        $customerId = (isset($_GET['CustomerId'])) ? $_GET['CustomerId'] : '';
+
+        $dataProvider = $invoiceHeader->search();
+        $dataProvider->criteria->compare('deliveryHeader.customer_id', $customerId);
+        $dataProvider->criteria->compare('t.is_inactive', 0);
+        $dataProvider->criteria->join = "INNER JOIN " . DeliveryHeader::model()->tableName() . " deliveryHeader ON deliveryHeader.id = t.delivery_header_id INNER JOIN " . Customer::model()->tableName() . " customer ON deliveryHeader.customer_id = customer.id";
+//        $dataProvider->criteria->order =  array('t.date ASC');
+
+        $page = array('size' => $pageSize, 'current' => $currentPage);
+        $date = array('attribute' => 't.date', 'start' => $startDate, 'end' => $endDate);
+
+        $sort = new CSort(get_class($invoiceHeader));
+        $sort->attributes = array('t.date DESC');
+
+        $dataProvider = ReportHelper::finalizeDataProvider($dataProvider, $page, $sort, $date);
+
+        if (isset($_GET['SaveExcel']))
+            $this->saveToExcel($dataProvider, array('startDate' => $startDate, 'endDate' => $endDate));
+
+        $this->render('report', array(
+            'invoiceHeader' => $invoiceHeader,
+            'dataProvider' => $dataProvider,
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'sort' => $sort,
+            'currentSort' => $currentSort,
+            'customerId' => $customerId,
+        ));
+    }
+
+    protected function saveToExcel($dataProvider, array $options = array()) {
+        set_time_limit(0);
+        ini_set('memory_limit', '1024M');
+
+        spl_autoload_unregister(array('YiiBase', 'autoload'));
+        include_once Yii::getPathOfAlias('ext.phpexcel.Classes') . DIRECTORY_SEPARATOR . 'PHPExcel.php';
+        spl_autoload_register(array('YiiBase', 'autoload'));
+
+        $objPHPExcel = new PHPExcel();
+
+        $documentProperties = $objPHPExcel->getProperties();
+        $documentProperties->setCreator('Galatech');
+        $documentProperties->setTitle('Laporan Summary Penjualan Barang');
+
+        $worksheet = $objPHPExcel->setActiveSheetIndex(0);
+        $worksheet->setTitle('Penjualan Summary');
+
+        $worksheet->getColumnDimension('A')->setAutoSize(true);
+        $worksheet->getColumnDimension('B')->setAutoSize(true);
+        $worksheet->getColumnDimension('C')->setAutoSize(true);
+        $worksheet->getColumnDimension('D')->setAutoSize(true);
+        $worksheet->getColumnDimension('E')->setAutoSize(true);
+        $worksheet->getColumnDimension('F')->setAutoSize(true);
+        $worksheet->getColumnDimension('G')->setAutoSize(true);
+
+        $worksheet->mergeCells('A1:G1');
+        $worksheet->mergeCells('A2:G2');
+        $worksheet->mergeCells('A3:G3');
+
+        $worksheet->getStyle('A1:G5')->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+        $worksheet->getStyle('A1:G5')->getFont()->setBold(true);
+
+        $worksheet->setCellValue('A1', 'Galatech');
+        $worksheet->setCellValue('A2', 'Penjualan Barang');
+        $worksheet->setCellValue('A3', Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($options['startDate'])) . ' - ' . Yii::app()->dateFormatter->format('d MMMM yyyy', strtotime($options['endDate'])));
+
+        $worksheet->setCellValue('A5', 'Invoice #');
+        $worksheet->setCellValue('B5', 'Tanggal');
+        $worksheet->setCellValue('C5', 'Pengiriman #');
+        $worksheet->setCellValue('D5', 'Customer');
+
+        $worksheet->getStyle('A5:I5')->getBorders()->getBottom()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);
+
+        $worksheet->setCellValue('E5', 'DPP');
+        $worksheet->setCellValue('F5', 'Uang Muka');
+        $worksheet->setCellValue('G5', 'PPn');
+        $worksheet->setCellValue('H5', 'Ongkos Kirim');
+        $worksheet->setCellValue('I5', 'Total');
+
+        $counter = 8;
+        foreach ($dataProvider->data as $header) {
+            $worksheet->getStyle("C{$counter}")->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_LEFT);
+
+            $worksheet->getStyle("E{$counter}:G{$counter}")->getNumberFormat()->setFormatCode('#,##0');
+            $worksheet->setCellValue("A{$counter}", $header->number);
+            $worksheet->setCellValue("B{$counter}", $header->date);
+            $worksheet->setCellValue("C{$counter}", $header->deliveryHeader->number);
+            $worksheet->setCellValue("D{$counter}", $header->deliveryHeader->customer->company);
+            $worksheet->setCellValue("E{$counter}", $header->deliveryHeader->subTotal);
+            $worksheet->setCellValue("F{$counter}", $header->deliveryHeader->downpayment_amount);
+            $worksheet->setCellValue("G{$counter}", $header->deliveryHeader->calculatedTax);
+            $worksheet->setCellValue("H{$counter}", $header->deliveryHeader->shipping_fee);
+            $worksheet->setCellValue("I{$counter}", $header->deliveryHeader->grandTotal);
+
+            $counter++;
+        }
+
+        header('Content-Type: application/xlsx');
+        header('Content-Disposition: attachment;filename="penjualan.xlsx"');
+        header('Cache-Control: max-age=0');
+
+        $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel2007');
+        $objWriter->save('php://output');
+
+        Yii::app()->end();
+    }
+
+    protected function reportGrandTotal($dataProvider) {
+        $grandTotal = 0.00;
+
+        foreach ($dataProvider->data as $data)
+            $grandTotal += $data->deliveryHeader->grandTotalPayment;
+
+        return $grandTotal;
+    }
+
+}

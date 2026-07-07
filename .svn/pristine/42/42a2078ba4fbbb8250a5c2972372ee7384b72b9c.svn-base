@@ -1,0 +1,174 @@
+<?php
+
+class PurchaseReturn extends CComponent
+{
+	public $header;
+	public $details;
+
+	public function __construct()
+	{
+		$this->header = new PurchaseReturnHeader();
+		$this->details = array();
+	}
+
+	public function copyFromDb($id)
+	{
+		$this->header = PurchaseReturnHeader::model()->resetScope()->findByPk($id);
+		$this->details = PurchaseReturnDetail::model()->resetScope()->findAllByAttributes(array('purchase_return_header_id' => $id));
+	}
+
+	public function addProductByPurchase($id)
+	{
+		$sql = 'SELECT purchase.product_id, purchase.quantity - COALESCE(returned.quantity, 0) AS quantity_purchased, purchase.unit_price AS unit_price
+				FROM
+				(
+					SELECT h.id, d.quantity, d.unit_price, d.product_id
+					FROM tblgt_purchase_header h
+					INNER JOIN tblgt_purchase_detail d ON h.id = d.purchase_header_id
+					WHERE h.is_inactive = 0 AND d.is_inactive = 0
+				) purchase
+				LEFT OUTER JOIN
+				(
+					SELECT h.purchase_header_id, h.id
+					FROM tblgt_purchase_invoice h
+					WHERE h.is_inactive = 0 
+				) purchaseInvoice
+				ON purchase.id = purchaseInvoice.purchase_header_id
+				LEFT OUTER JOIN
+				(
+					SELECT h.purchase_invoice_id, SUM(d.quantity) AS quantity, d.product_id
+					FROM tblgt_purchase_return_header h
+					INNER JOIN tblgt_purchase_return_detail d ON h.id = d.purchase_return_header_id
+					WHERE h.is_inactive = 0 AND d.is_inactive = 0
+					GROUP BY h.purchase_invoice_id, d.product_id
+				) returned
+				ON purchaseInvoice.id = returned.purchase_invoice_id
+				AND purchase.product_id = returned.product_id
+				INNER JOIN tblgt_product
+				ON purchase.product_id = tblgt_product.id
+				WHERE purchaseInvoice.id = :purchaseInvoice_id AND NOT (returned.product_id IS NOT NULL AND returned.purchase_invoice_id IS NULL)
+				HAVING quantity_purchased > 0';
+
+		$resultSet = CActiveRecord::$db->createCommand($sql)->queryAll(true, array(':purchaseInvoice_id' => $id));
+
+		$this->details = array();
+
+		foreach ($resultSet as $row)
+		{
+			$detail = new PurchaseReturnDetail();
+
+			$detail->product_id = $row['product_id'];
+			$detail->unit_price = $row['unit_price'];
+
+			$this->details[] = $detail;
+		}
+	}
+
+	public function removeProductAt($index)
+	{
+		array_splice($this->details, $index, 1);
+	}
+
+	public function validate()
+	{
+		$valid = $this->header->validate();
+
+		if (count($this->details) > 0)
+		{
+			foreach ($this->details as $detail)
+			{
+				$fields = array('quantity', 'product_id');
+				$valid = $detail->validate($fields) && $valid;
+			}
+		}
+		else
+			$valid = false;
+
+		return $valid;
+	}
+
+	public function save($runValidation)
+	{
+		$valid = $this->header->save($runValidation);
+		
+		$accountingJournalDebit = AccountingJournalHelper::make('debit', $this->header->number, $this->header->date, $this->header->purchaseInvoice->purchaseHeader->supplier->account_id, $this->grandTotal);
+		$valid = $accountingJournalDebit->save() && $valid;
+		$accountingJournalCredit = AccountingJournalHelper::make('credit', $this->header->number, $this->header->date, 32, $this->subTotal);
+		$valid = $accountingJournalCredit->save() && $valid;
+		
+		if ($this->calculatedTax > 0)
+		{
+			$journalTaxCredit = AccountingJournalHelper::make('credit', $this->header->number, $this->header->date, 172, $this->calculatedTax);
+			$valid = $journalTaxCredit->save() && $valid;
+		}
+		
+		if ($this->header->shipping_fee > 0)
+		{
+			$journalShippingCredit = AccountingJournalHelper::make('credit', $this->header->number, $this->header->date, 175, $this->header->shipping_fee);
+			$valid = $journalShippingCredit->save() && $valid;
+		}
+
+		Inventory::model()->DeleteAllByAttributes(array('transaction_number' => $this->header->number));
+		
+		foreach ($this->details as $detail)
+		{
+			$detail->purchase_return_header_id = $this->header->id;
+			$valid = $detail->save($runValidation) && $valid;
+
+			if ((int)$detail->is_inactive === 0)
+			{
+				$inventory = new Inventory();
+				$inventory->transaction_number = $this->header->number;
+				$inventory->transaction_type = 2;
+				$inventory->transaction_subject = $this->header->purchaseInvoice->purchaseHeader->supplier->company;
+				$inventory->product_id = $detail->product_id;
+				$inventory->admin_id = $this->header->admin_id;
+				$inventory->date = $this->header->date;
+				$inventory->quantity_out = $detail->quantity;
+				$inventory->warehouse_id = $this->header->warehouse_id;
+
+				$valid = $inventory->save() && $valid;
+			}
+		}
+
+		return $valid;
+	}
+
+	public function update()
+	{
+		$valid = $this->header->update();
+
+		foreach ($this->details as $detail)
+			$valid = $detail->update() && $valid;
+
+		return $valid;
+	}
+
+	public function getSubTotal()
+	{
+		$total = 0.00;
+		foreach ($this->details as $detail)
+			$total += $detail->total;
+
+		return $total;
+	}
+        
+        public function getSubTotalQuantity()
+	{
+		$total = 0.00;
+		foreach ($this->details as $detail)
+			$total += $detail->quantity;
+
+		return $total;
+	}
+	
+	public function getCalculatedTax()
+	{
+		return ($this->subTotal) * ($this->header->tax / 100);
+	}
+	
+	public function getGrandTotal()
+	{
+		return $this->subTotal + $this->calculatedTax + $this->header->shipping_fee;
+	}
+}

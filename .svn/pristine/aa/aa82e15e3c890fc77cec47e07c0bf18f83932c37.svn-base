@@ -1,0 +1,109 @@
+<?php
+$this->pageTitle=Yii::app()->name . ' - Galatech';
+$this->breadcrumbs=array(
+	'Galatech',
+);
+Yii::app()->clientScript->registerScript('transaction', "
+	if (!document.getElementById('purchase-ul').getElementsByTagName('li').length)
+		document.getElementById('purchase-fieldset').style.display = 'none';
+	if (!document.getElementById('warehouse-ul').getElementsByTagName('li').length)
+		document.getElementById('warehouse-fieldset').style.display = 'none';
+	if (!document.getElementById('sales-ul').getElementsByTagName('li').length)
+		document.getElementById('sales-fieldset').style.display = 'none';
+	if (!document.getElementById('accounting-ul').getElementsByTagName('li').length)
+		document.getElementById('accounting-fieldset').style.display = 'none';
+");
+?>
+<h1>Laporan Transaksi</h1>
+
+<div class="form">        
+        <fieldset id="purchase-fieldset">
+                <legend>Pembelian</legend>
+                <ul id="purchase-ul" style="display: table-cell">
+					<?php if (Yii::app()->user->checkAccess('tPurchaseReport') || Yii::app()->user->checkAccess('tsPurchaseReport')): ?>
+						<li> <?php echo CHtml::link('Pemesanan Pembelian', array('/transaction/purchase/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (Yii::app()->user->checkAccess('tReceiveReport') || Yii::app()->user->checkAccess('tsReceiveReport')): ?>
+						<li> <?php echo CHtml::link('Penerimaan Barang', array('/transaction/receive/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (Yii::app()->user->checkAccess('tPurchaseReturnReport') || Yii::app()->user->checkAccess('tsPurchaseReturnReport')): ?>
+						<li> <?php echo CHtml::link('Retur Pembelian', array('/transaction/purchaseReturn/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (Yii::app()->user->checkAccess('tPurchasePaymentReport') || Yii::app()->user->checkAccess('tsPurchasePaymentReport')): ?>
+						<li> <?php echo CHtml::link('Pembayaran Pembelian', array('/transaction/purchasePayment/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (Yii::app()->user->checkAccess('tAccountingReport') || Yii::app()->user->checkAccess('tsAccountingReport')): ?>
+						<li><?php echo CHtml::link('Tanda Terima Pembelian', array('/transaction/purchaseReceipt/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Pengeluaran Giro Pembelian', array('/transaction/purchaseCheque/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Pembelian Barang per Item (Summary)', array('/transaction/purchaseItems/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Penerimaan Barang per Item (Summary)', array('/transaction/receiveItem/report')); ?><br/><br/></li>
+					<?php endif; ?>
+						
+				</ul>
+        </fieldset>
+        
+        <fieldset id="warehouse-fieldset">
+                <legend>Gudang</legend>
+                <ul id="warehouse-ul" style="display: table-cell">
+					<?php if (Yii::app()->user->checkAccess('tWarehouseReport') || Yii::app()->user->checkAccess('tsWarehouseReport')): ?>
+                        <li><?php echo CHtml::link('Stok Adjustment', array('/transaction/adjustment/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Stok per Gudang', array('/transaction/stockLocal/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Stok Gudang Global', array('/transaction/stockGlobal/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Stok Gudang Summary', array('/transaction/stock/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Stok Gudang Global (Tabular Excel)', array('/transaction/excel/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Stok', array('/transaction/inventory/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (TaxConnectionChecking::isCurrentConnectionSecondary() && Yii::app()->user->checkAccess('tsWarehouseReport')): ?>
+						<li><?php echo CHtml::link('Stok Transfer', array('/transaction/transfer/report')); ?><br/><br/></li>
+					<?php endif; ?>
+				</ul>
+        </fieldset>
+        
+        <fieldset id="sales-fieldset">
+                <legend>Penjualan</legend>
+                <ul id="sales-ul" style="display: table-cell">
+					<?php if (Yii::app()->user->checkAccess('tInvoiceReport') || Yii::app()->user->checkAccess('tsInvoiceReport')): ?>
+						<li><?php echo CHtml::link('Inden Barang Penjualan', array('/transaction/indent/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (Yii::app()->user->checkAccess('tSalesDownpaymentReport') || Yii::app()->user->checkAccess('tsSalesDownpaymentReport')): ?>
+						<li><?php echo CHtml::link('Uang Muka Penjualan', array('/transaction/salesDownpayment/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (Yii::app()->user->checkAccess('tDeliveryReport') || Yii::app()->user->checkAccess('tsDeliveryReport')): ?>
+						<li><?php echo CHtml::link('Pengiriman Barang', array('/transaction/delivery/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (Yii::app()->user->checkAccess('tSalesReturnReport') || Yii::app()->user->checkAccess('tsSalesReturnReport')): ?>
+						<li><?php echo CHtml::link('Retur Penjualan', array('/transaction/salesReturn/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (Yii::app()->user->checkAccess('tAccountingReport') || Yii::app()->user->checkAccess('tsAccountingReport')): ?>
+						<li><?php echo CHtml::link('Rekap Tanda Terima Penjualan', array('/transaction/receipt/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Rekap Giro Penjualan', array('/transaction/salesCheque/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Pembayaran Penjualan', array('/transaction/salesPayment/report')); ?><br/><br/></li>
+					<?php endif; ?>
+					<?php if (Yii::app()->user->checkAccess('tInvoiceReport') || Yii::app()->user->checkAccess('tsInvoiceReport')): ?>
+						<li><?php echo CHtml::link('Penjualan Barang', array('/transaction/invoice/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Penjualan Barang (Summary)', array('/transaction/invoiceSummary/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Penjualan Barang per Pelanggan (Summary)', array('/transaction/salesCustomer/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Penjualan Barang per Item (Summary)', array('/transaction/salesItem/report')); ?><br/><br/></li>
+					<?php endif; ?>
+				</ul>
+        </fieldset>
+        
+        <fieldset id="accounting-fieldset">
+                <legend>Keuangan</legend>
+                <ul id="accounting-ul" style="display: table-cell">
+					<?php if (Yii::app()->user->checkAccess('tAccountingReport') || Yii::app()->user->checkAccess('tsAccountingReport')): ?>
+						<li><?php echo CHtml::link('Pengiriman Barang (dengan harga)', array('/transaction/deliveryPrice/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Daftar Piutang Pelanggan', array('/transaction/agingSchedule/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Daftar Hutang Supplier', array('/transaction/agingPayable/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Buku Kas / Bank', array('/transaction/bankbook/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Journal Penyesuaian', array('/transaction/journalVoucher/report')); ?><br/><br/></li>
+                        <li><?php echo CHtml::link('Balance Sheet', array('/transaction/balanceSheet/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Harga Pokok Penjualan', array('/transaction/hpp/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Laba/Rugi', array('/transaction/profitLoss/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Laporan Jurnal Pembukuan', array('/transaction/accountingJournal/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Tanda Terima Penjualan -> Giro & Pelunasan', array('/transaction/saleReceiptChequePayment/report')); ?><br/><br/></li>
+						<li><?php echo CHtml::link('Tanda Terima Pembelian -> Giro & Pelunasan', array('/transaction/purchaseReceiptChequePayment/report')); ?><br/><br/></li>
+					<?php endif; ?>
+                </ul>
+        </fieldset>
+</div>
