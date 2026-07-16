@@ -380,7 +380,7 @@ class Product extends ActiveRecord {
     }
 
     public function getTotalPurchase() {
-        $sql = "SELECT SUM(quantity_received * price_before_tax) AS total_price
+        $sql = "SELECT SUM(quantity * price_before_tax) AS total_price
                 FROM " . PurchaseDetail::model()->tableName() . " 
                 WHERE product_id = :product_id";
 

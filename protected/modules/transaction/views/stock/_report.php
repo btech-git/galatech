@@ -29,11 +29,11 @@ Yii::app()->clientScript->registerCss('_report', '
         <th class="width1-5">Stok Masuk</th>
         <th class="width1-6">Stok Keluar</th>
         <th class="width1-7">Stok Akhir</th>
-        <th class="width1-8">HPP</th>
-        <th class="width1-9">Nilai Stok</th>
+<!--        <th class="width1-8">HPP</th>
+        <th class="width1-9">Nilai Stok</th>-->
     </tr>
     <tr id="header2">
-        <td colspan="9"></td>
+        <td colspan="7"></td>
     </tr>
     <?php foreach ($dataProvider->data as $header): ?>
         <?php $beginningStock = $header->getStockBeginning($startDate); ?>
@@ -58,12 +58,12 @@ Yii::app()->clientScript->registerCss('_report', '
             <td class="width1-7" style="text-align: center">
                 <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', $endingStock)); ?>
             </td>
-            <td class="width1-8" style="text-align: right">
-                <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $costOfGoodsSold)); ?>
+<!--            <td class="width1-8" style="text-align: right">
+                <?php //echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $costOfGoodsSold)); ?>
             </td>
             <td class="width1-9" style="text-align: right">
-                <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $totalStockValue)); ?>
-            </td>
+                <?php //echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $totalStockValue)); ?>
+            </td>-->
         </tr>
     <?php endforeach; ?>
 </table>

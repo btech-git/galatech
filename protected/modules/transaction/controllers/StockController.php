@@ -123,8 +123,8 @@ class StockController extends Controller {
         $worksheet->setCellValue('E5', 'Stok Masuk');
         $worksheet->setCellValue('F5', 'Stok Keluar');
         $worksheet->setCellValue('G5', 'Stok Akhir');
-        $worksheet->setCellValue('H5', 'HPP');
-        $worksheet->setCellValue('I5', 'Nilai Stok');
+//        $worksheet->setCellValue('H5', 'HPP');
+//        $worksheet->setCellValue('I5', 'Nilai Stok');
 
         $worksheet->getStyle('A5:I5')->getBorders()->getBottom()->setBorderStyle(PHPExcel_Style_Border::BORDER_THIN);
 
@@ -144,8 +144,8 @@ class StockController extends Controller {
             $worksheet->setCellValue("E{$counter}", $stockIn);
             $worksheet->setCellValue("F{$counter}", $stockOut);
             $worksheet->setCellValue("G{$counter}", $endingStock);
-            $worksheet->setCellValue("H{$counter}", round($costOfGoodsSold, 2));
-            $worksheet->setCellValue("I{$counter}", round($totalStockValue, 2));
+//            $worksheet->setCellValue("H{$counter}", round($costOfGoodsSold, 2));
+//            $worksheet->setCellValue("I{$counter}", round($totalStockValue, 2));
 
             $counter++;
         }

@@ -11,7 +11,7 @@ Yii::app()->clientScript->registerCss('_report', '
 
 <div style="font-weight: bold; text-align: center">
     <div style="font-size: larger">GALATECH JAYA ABADI</div>
-    <div style="font-size: larger">Laporan Stok Barang</div>
+    <div style="font-size: larger">Laporan Stok Barang per Gudang</div>
 </div>
 
 <br />
@@ -22,11 +22,11 @@ Yii::app()->clientScript->registerCss('_report', '
         <th class="width1-2">Nama Produk</th>
         <th class="width1-3">Ukuran</th>
         <th class="width1-4">Stok</th>
-        <th class="width1-5">HPP</th>
-        <th class="width1-6">Nilai Stok</th>
+<!--        <th class="width1-5">HPP</th>
+        <th class="width1-6">Nilai Stok</th>-->
     </tr>
     <tr id="header2">
-        <td colspan="6"></td>
+        <td colspan="4"></td>
     </tr>
     <?php foreach ($dataProvider->data as $header): ?>
         <?php $stockQuantity = $header->getLocalStock($warehouseId); ?>
@@ -39,15 +39,15 @@ Yii::app()->clientScript->registerCss('_report', '
             <td class="width1-4" style="text-align: center">
                 <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0', $stockQuantity)); ?>
             </td>
-            <td class="width1-5" style="text-align: right">
-                <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $costOfGoodsSold)); ?>
+<!--            <td class="width1-5" style="text-align: right">
+                <?php //echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $costOfGoodsSold)); ?>
             </td>
             <td class="width1-6" style="text-align: right">
-                <?php echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $totalStockValue)); ?>
-            </td>
+                <?php //echo CHtml::encode(Yii::app()->numberFormatter->format('#,##0.00', $totalStockValue)); ?>
+            </td>-->
         </tr>
         <tr class="items2">
-            <td colspan="6"></td>
+            <td colspan="4"></td>
         </tr>
     <?php endforeach; ?>
 </table>

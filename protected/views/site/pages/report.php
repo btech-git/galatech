@@ -51,7 +51,7 @@ Yii::app()->clientScript->registerScript('transaction', "
                 <li><?php echo CHtml::link('Stok Gudang Global', array('/transaction/stockGlobal/report')); ?><br/><br/></li>
                 <li><?php echo CHtml::link('Stok Gudang Summary', array('/transaction/stock/report')); ?><br/><br/></li>
                 <li><?php echo CHtml::link('Stok Gudang Global (Tabular Excel)', array('/transaction/excel/report')); ?><br/><br/></li>
-                <li><?php echo CHtml::link('Stok', array('/transaction/inventory/report')); ?><br/><br/></li>
+                <li><?php echo CHtml::link('Stok Inventory Gudang ', array('/transaction/inventory/report')); ?><br/><br/></li>
             <?php endif; ?>
             <?php //if (TaxConnectionChecking::isCurrentConnectionSecondary() && Yii::app()->user->checkAccess('tsWarehouseReport')): ?>
                 <li><?php echo CHtml::link('Stok Transfer', array('/transaction/transfer/report')); ?><br/><br/></li>
@@ -107,6 +107,7 @@ Yii::app()->clientScript->registerScript('transaction', "
                 <li><?php echo CHtml::link('Laporan Jurnal Pembukuan', array('/transaction/accountingJournal/report')); ?><br/><br/></li>
                 <li><?php echo CHtml::link('Tanda Terima Penjualan -> Giro & Pelunasan', array('/transaction/saleReceiptChequePayment/report')); ?><br/><br/></li>
                 <li><?php echo CHtml::link('Tanda Terima Pembelian -> Giro & Pelunasan', array('/transaction/purchaseReceiptChequePayment/report')); ?><br/><br/></li>
+                <li><?php echo CHtml::link('Nilai Stok Inventory ', array('/transaction/stockValue/report')); ?><br/><br/></li>
             <?php endif; ?>
         </ul>
     </fieldset>
