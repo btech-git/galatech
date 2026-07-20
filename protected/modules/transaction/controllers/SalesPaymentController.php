@@ -59,7 +59,7 @@ class SalesPaymentController extends Controller {
         }
 
         $salePaymentAccountSecondary = 'id IN (3, 48, 1, 215, 288, 370, 160, 161, 467)';
-        $salePaymentAccountPrimary = 'id IN (47, 2, 214, 260, 160, 161, 463)';
+        $salePaymentAccountPrimary = 'account_category_id IN (1, 2, 15, 30, 31, 32)';
 
         $salesPayment->header->admin_id = Yii::app()->user->id;
         $this->loadState($salesPayment);

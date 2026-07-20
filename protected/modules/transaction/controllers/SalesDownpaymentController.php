@@ -77,7 +77,7 @@ class SalesDownpaymentController extends Controller {
 
         if (isset($_POST['Submit']) && IdempotentManager::check()) {
             if ($salesDownpayment->header->isNewRecord) {
-                $salesDownpayment->header->number = CodeNumber::make(array($salesDownpayment->header, DeliveryHeader::model()), 'number', 'INV', ($salesDownpayment->header->is_non_tax) ? true : false);
+                $salesDownpayment->header->number = CodeNumber::make(array($salesDownpayment->header, DeliveryHeader::model()), 'number', 'DLV', ($salesDownpayment->header->is_non_tax) ? true : false);
             }
 
             $dbTransaction = CActiveRecord::$db->beginTransaction();

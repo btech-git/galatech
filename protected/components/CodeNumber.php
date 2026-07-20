@@ -1,113 +1,100 @@
 <?php
 
-class CodeNumber
-{
-	public static function make($models, $attribute, $constant, $isMonthly = false)
-	{
-		$record = (is_array($models)) ? self::makeFromMany($models, $attribute, $constant, $isMonthly) : self::makeFromOne($models, $attribute, $constant, $isMonthly);
+class CodeNumber {
 
-		$months = array('I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII');
+    public static function make($models, $attribute, $constant, $isMonthly = false) {
+        $record = (is_array($models)) ? self::makeFromMany($models, $attribute, $constant, $isMonthly) : self::makeFromOne($models, $attribute, $constant, $isMonthly);
 
-		$monthNow = date('m');
-		$yearNow = date('y');
+        $months = array('I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII');
 
-		if ($record === false)
-			$ordinal = 0;
-		else
-		{
-			if ($isMonthly)
-				list($ordinal,, $month, $year) = explode('/', $record[$attribute]) + array(0, $constant, $months[$monthNow - 1], $yearNow);
-			else
-				list($ordinal,, $year) = explode('/', $record[$attribute]) + array(0, $constant, $yearNow);
+        $monthNow = date('m');
+        $yearNow = date('y');
 
-			$valid = $year < $yearNow;
+        if ($record === false)
+            $ordinal = 0;
+        else {
+            if ($isMonthly)
+                list($ordinal,, $month, $year) = explode('/', $record[$attribute]) + array(0, $constant, $months[$monthNow - 1], $yearNow);
+            else
+                list($ordinal,, $year) = explode('/', $record[$attribute]) + array(0, $constant, $yearNow);
 
-			if ($isMonthly)
-				$valid = $valid || ((($month === 'IX') ? 'VIIII' : $month) < (($months[$monthNow - 1] === 'IX') ? 'VIIII' : $months[$monthNow - 1]));
+            $valid = $year < $yearNow;
 
-			if ($valid)
-				$ordinal = 0;
-		}
+            if ($isMonthly)
+                $valid = $valid || ((($month === 'IX') ? 'VIIII' : $month) < (($months[$monthNow - 1] === 'IX') ? 'VIIII' : $months[$monthNow - 1]));
 
-		if ($isMonthly)
-			$codeNumber = sprintf('%05d/%s/%s/%d', $ordinal + 1, $constant, $months[$monthNow - 1], $yearNow);
-		else
-			$codeNumber = sprintf('%05d/%s/%d', $ordinal + 1, $constant, $yearNow);
+            if ($valid)
+                $ordinal = 0;
+        }
 
-		return $codeNumber;
-	}
+        if ($isMonthly)
+            $codeNumber = sprintf('%05d/%s/%s/%d', $ordinal + 1, $constant, $months[$monthNow - 1], $yearNow);
+        else
+            $codeNumber = sprintf('%05d/%s/%d', $ordinal + 1, $constant, $yearNow);
 
-	private static function makeFromOne($model, $attribute, $constant, $isMonthly)
-	{
-		if ($isMonthly)
-		{
-			$select = "{$attribute}, CAST(SUBSTRING_INDEX({$attribute}, '/', 1) AS UNSIGNED) AS ordinal, CASE SUBSTRING_INDEX(SUBSTRING_INDEX({$attribute}, '/', -2), '/', 1) WHEN 'IX' THEN 'VIIII' ELSE SUBSTRING_INDEX(SUBSTRING_INDEX({$attribute}, '/', -2), '/', 1) END AS month, SUBSTRING_INDEX({$attribute}, '/', -1) AS year";
-			$order = 'year DESC, month DESC, ordinal DESC';
-		}
-		else
-		{
-			$select = "{$attribute}, CAST(SUBSTRING_INDEX({$attribute}, '/', 1) AS UNSIGNED) AS ordinal, SUBSTRING_INDEX({$attribute}, '/', -1) AS year";
-			$order = 'year DESC, ordinal DESC';
-		}
-		
-		$record = CActiveRecord::$db->createCommand()
-			->select($select)
-			->from($model->tableName())
-			->where("SUBSTRING_INDEX(SUBSTRING_INDEX(number, '/', 2), '/', -1) = '{$constant}'")
-			->order($order)
-			->queryRow();
+        return $codeNumber;
+    }
 
-		return $record;
-	}
+    private static function makeFromOne($model, $attribute, $constant, $isMonthly) {
+        if ($isMonthly) {
+            $select = "{$attribute}, CAST(SUBSTRING_INDEX({$attribute}, '/', 1) AS UNSIGNED) AS ordinal, CASE SUBSTRING_INDEX(SUBSTRING_INDEX({$attribute}, '/', -2), '/', 1) WHEN 'IX' THEN 'VIIII' ELSE SUBSTRING_INDEX(SUBSTRING_INDEX({$attribute}, '/', -2), '/', 1) END AS month, SUBSTRING_INDEX({$attribute}, '/', -1) AS year";
+            $order = 'year DESC, month DESC, ordinal DESC';
+        } else {
+            $select = "{$attribute}, CAST(SUBSTRING_INDEX({$attribute}, '/', 1) AS UNSIGNED) AS ordinal, SUBSTRING_INDEX({$attribute}, '/', -1) AS year";
+            $order = 'year DESC, ordinal DESC';
+        }
 
-	private static function makeFromMany($models, $attribute, $constant, $isMonthly)
-	{
-		if ($isMonthly)
-		{
-			$select = "{$attribute}, CAST(SUBSTRING_INDEX({$attribute}, '/', 1) AS UNSIGNED) AS ordinal, CASE SUBSTRING_INDEX(SUBSTRING_INDEX({$attribute}, '/', -2), '/', 1) WHEN 'IX' THEN 'VIIII' ELSE SUBSTRING_INDEX(SUBSTRING_INDEX({$attribute}, '/', -2), '/', 1) END AS month, SUBSTRING_INDEX({$attribute}, '/', -1) AS year";
-			$order = 'year DESC, month DESC, ordinal DESC';
-		}
-		else
-		{
-			$select = "{$attribute}, CAST(SUBSTRING_INDEX({$attribute}, '/', 1) AS UNSIGNED) AS ordinal, SUBSTRING_INDEX({$attribute}, '/', -1) AS year";
-			$order = 'year DESC, ordinal DESC';
-		}
-		
-		$sql = '';
-		foreach ($models as $i=>$model)
-		{
-			if ($i > 0)
-				$sql .= " UNION ";
+        $record = CActiveRecord::$db->createCommand()
+                ->select($select)
+                ->from($model->tableName())
+                ->where("SUBSTRING_INDEX(SUBSTRING_INDEX(number, '/', 2), '/', -1) = '{$constant}'")
+                ->order($order)
+                ->queryRow();
 
-			$sql .= "SELECT {$select}
+        return $record;
+    }
+
+    private static function makeFromMany($models, $attribute, $constant, $isMonthly) {
+        if ($isMonthly) {
+            $select = "{$attribute}, CAST(SUBSTRING_INDEX({$attribute}, '/', 1) AS UNSIGNED) AS ordinal, CASE SUBSTRING_INDEX(SUBSTRING_INDEX({$attribute}, '/', -2), '/', 1) WHEN 'IX' THEN 'VIIII' ELSE SUBSTRING_INDEX(SUBSTRING_INDEX({$attribute}, '/', -2), '/', 1) END AS month, SUBSTRING_INDEX({$attribute}, '/', -1) AS year";
+            $order = 'year DESC, month DESC, ordinal DESC';
+        } else {
+            $select = "{$attribute}, CAST(SUBSTRING_INDEX({$attribute}, '/', 1) AS UNSIGNED) AS ordinal, SUBSTRING_INDEX({$attribute}, '/', -1) AS year";
+            $order = 'year DESC, ordinal DESC';
+        }
+
+        $sql = '';
+        foreach ($models as $i => $model) {
+            if ($i > 0)
+                $sql .= " UNION ";
+
+            $sql .= "SELECT {$select}
 					FROM " . $model->tableName() . "
 					WHERE SUBSTRING_INDEX(SUBSTRING_INDEX(number, '/', 2), '/', -1) = '{$constant}'";
-		}
-		$sql .= (count($models) > 0) ? " ORDER BY {$order}" : '';
+        }
+        $sql .= (count($models) > 0) ? " ORDER BY {$order}" : '';
 
-		$record = CActiveRecord::$db->createCommand($sql)->queryRow();
+        $record = CActiveRecord::$db->createCommand($sql)->queryRow();
 
-		return $record;
-	}
-	
-	public static function setTaxNumber($taxForm, $modelType)
-	{
-		if ($modelType === 1)
-			$model = $taxForm->salesDownpayment;
-		else if ($modelType === 2)
-			$model = $taxForm->invoiceHeader;
-		else
-			$model = null;
-		
-		if ($model === null)
-		{
-			$ordinal = 0;
-			$year = 0;
-		}
-		else
-			list($ordinal, , $year) = explode('/', $model->number) + array(0, 0, 0);
-		
-		$taxForm->cn_ordinal = 1827 + $ordinal;
-		$taxForm->cn_constant = sprintf('010.003-%02d.6027', $year);
-	}
+        return $record;
+    }
+
+    public static function setTaxNumber($taxForm, $modelType) {
+        if ($modelType === 1)
+            $model = $taxForm->salesDownpayment;
+        else if ($modelType === 2)
+            $model = $taxForm->invoiceHeader;
+        else
+            $model = null;
+
+        if ($model === null) {
+            $ordinal = 0;
+            $year = 0;
+        } else
+            list($ordinal,, $year) = explode('/', $model->number) + array(0, 0, 0);
+
+        $taxForm->cn_ordinal = 1827 + $ordinal;
+        $taxForm->cn_constant = sprintf('010.003-%02d.6027', $year);
+    }
+
 }

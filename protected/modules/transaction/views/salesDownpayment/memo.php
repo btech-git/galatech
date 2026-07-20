@@ -33,7 +33,7 @@ Yii::app()->clientScript->registerCss('memo', '
             <div class="divtable">
                 <div class="divtablerow">
                     <div class="divtablecell info hcolumn1header" style="font-weight: bold">Invoice #</div>
-                    <div class="divtablecell info hcolumn1value"><?php echo CHtml::encode(CHtml::value($salesDownpayment, 'number')); ?></div>
+                    <div class="divtablecell info hcolumn1value"><?php echo CHtml::encode($salesDownpayment->getCodeNumber()); ?></div>
                 </div>
                 <div class="divtablerow">
                     <div class="divtablecell info hcolumn1header" style="font-weight: bold">Tanggal</div>
