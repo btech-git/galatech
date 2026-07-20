@@ -141,8 +141,8 @@ class SalesDownpayment extends ActiveRecord {
         $length = 0;
 
         if ($this->number !== null) {
-            $constant = ($this->deliveryHeader->is_non_tax) ? 'NINV' : '/INV';
-            $length = ($this->deliveryHeader->is_non_tax) ? 5 : 4;
+            $constant = ($this->is_non_tax) ? 'NINV' : '/INV';
+            $length = ($this->is_non_tax) ? 5 : 4;
         }
 
         return substr_replace($this->number, $constant, 5, $length);

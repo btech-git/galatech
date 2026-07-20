@@ -25,7 +25,10 @@
                 <?php if (TaxConnectionChecking::isCurrentConnectionSecondary()): ?>
                     <?php echo CHtml::activeDropDownList($detail, "[$i]account_id", CHtml::listData(Account::model()->findAll($salePaymentAccountSecondary), 'id', 'name'), array('empty' => '-- Pilih Bank --')); ?>
                 <?php else: ?>
-                    <?php echo CHtml::activeDropDownList($detail, "[$i]account_id", CHtml::listData(Account::model()->findAll(), 'id', 'name'), array('empty' => '-- Pilih Bank --')); ?>
+                    <?php echo CHtml::activeDropDownList($detail, "[$i]account_id", CHtml::listData(Account::model()->findAll(array(
+                        'condition' => 't.account_category_id NOT IN (3, 4, 6, 17, 18)', 
+                        'order' => 't.account_category_id ASC, t.code ASC'
+                    )), 'id', 'name'), array('empty' => '-- Pilih Bank --')); ?>
                 <?php endif; ?>
                 <?php echo CHtml::error($detail, 'account_id'); ?>
             </td>
@@ -40,11 +43,11 @@
                         'dataType' => 'JSON',
                         'url' => CController::createUrl('summaryAjaxData', array('id' => $salesPayment->header->id, 'index' => $i)),
                         'success' => 'function(data) {
-						$("#amount_' . $i . '").html(data.amount);
-						$("#total_amount").html(data.total);
-						$("#amount_paid").html(data.amountPaid);
-						$("#total_payment").html(data.totalPayment);
-					}',
+                            $("#amount_' . $i . '").html(data.amount);
+                            $("#total_amount").html(data.total);
+                            $("#amount_paid").html(data.amountPaid);
+                            $("#total_payment").html(data.totalPayment);
+                        }',
                     )),
                 ));
                 ?>
